@@ -41,6 +41,8 @@ import {
   adjustReplacementForContext,
   expandRangeForJsQuotes,
 } from "../scanner/replacementContext";
+import { DynamicCssVarIndex } from "../scanner/dynamicCssVarIndex";
+import { showContextualVarPicker } from "../views/contextualVarPicker";
 
 type PickerStyle = "webviewBeside" | "completion";
 
@@ -59,6 +61,7 @@ const KIND_TO_CATEGORIES: Record<string, readonly TokenCategory[]> = {
 
 export async function showAlternatives(
   scanner: TokenScanner,
+  dynamicCssVarIndex: DynamicCssVarIndex,
   scopes: ActiveScopeTracker,
   context: vscode.ExtensionContext,
 ): Promise<void> {
@@ -69,6 +72,20 @@ export async function showAlternatives(
     );
     return;
   }
+
+  const tokenRef = referenceAt(editor.document, editor.selection.active);
+  if (tokenRef && tokenRef.name.startsWith("--")) {
+    await dynamicCssVarIndex.ensureReady();
+    if (dynamicCssVarIndex.has(tokenRef.name)) {
+      const allTokens = await scanner.scan();
+      const isDesignToken = allTokens.some((t) => t.name === tokenRef.name);
+      if (!isDesignToken) {
+        await showContextualVarPicker(tokenRef.name, dynamicCssVarIndex);
+        return;
+      }
+    }
+  }
+
   const ctx = await resolveContext(editor, scanner, scopes);
   if (!ctx) {
     vscode.window.showInformationMessage(

@@ -330,10 +330,11 @@ body {
 }
 
 .category__chevron {
-  display: inline-block;
-  width: 10px;
-  text-align: center;
-  font-size: 0.9em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   color: var(--vscode-descriptionForeground);
   transition: transform 0.12s ease;
 }
@@ -342,19 +343,37 @@ body {
   transform: rotate(-90deg);
 }
 
+.category__variant-select {
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 11px;
+  margin-left: auto;
+}
+
 .category__title {
   flex: 1;
 }
 
 .category__count {
   font-weight: 500;
+  font-size: 0.8em;
   color: var(--vscode-descriptionForeground);
   font-variant-numeric: tabular-nums;
+  background: var(--vscode-toolbar-hoverBackground, transparent);
+  border: 1px solid var(--vscode-panel-border, transparent);
+  border-radius: 9999px;
+  padding: 0 5px;
+  flex-shrink: 0;
 }
 
 .category[data-collapsed="true"] > .tokens,
 .category[data-collapsed="true"] > .family,
-.category[data-collapsed="true"] > .subfamily-header {
+.category[data-collapsed="true"] > .family-header,
+.category[data-collapsed="true"] > .subfamily-header,
+.category[data-collapsed="true"] > .visual-grid {
   display: none;
 }
 
@@ -640,4 +659,181 @@ body {
   margin-right: 4px;
   vertical-align: middle;
   box-shadow: inset 0 0 0 0.5px var(--vscode-foreground);
+}
+
+/* ─── Visual Mode Header Controls ──────────────────────────────────────── */
+
+.view-mode-btn {
+  background: none;
+  border: none;
+  color: var(--vscode-icon-foreground);
+  padding: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.view-mode-btn:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.visual-options {
+  display: flex;
+  gap: 8px;
+  padding: 4px 8px 8px 8px;
+  background: var(--vscode-sideBar-background);
+  border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+}
+
+.visual-select {
+  flex: 1;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border);
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+/* ─── Visual Mode Body & Grid ─────────────────────────────────────────── */
+
+.category--visual .visual-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 12px;
+  padding: 8px 16px 16px 16px;
+}
+
+.visual-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editorWidget-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: grab;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.visual-card:hover {
+  border-color: var(--vscode-focusBorder);
+  transform: translateY(-1px);
+}
+
+.visual-card:active {
+  cursor: grabbing;
+}
+
+.visual-card__preview {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vscode-editor-background);
+  /* Checkerboard for semi-transparent colors */
+  background-image: linear-gradient(45deg, var(--vscode-editorWidget-background) 25%, transparent 25%),
+                    linear-gradient(-45deg, var(--vscode-editorWidget-background) 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, var(--vscode-editorWidget-background) 75%),
+                    linear-gradient(-45deg, transparent 75%, var(--vscode-editorWidget-background) 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  position: relative;
+}
+
+.visual-spacing-bar {
+  height: 12px;
+  background: var(--vscode-button-background);
+  border-radius: 2px;
+  min-width: 4px;
+}
+
+.visual-color-swatch {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+}
+
+.visual-radius-box {
+  width: 32px;
+  height: 32px;
+  background: var(--vscode-button-background);
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.visual-shadow-box {
+  width: 32px;
+  height: 32px;
+  background: var(--vscode-editor-background);
+  border-radius: 4px;
+}
+
+.visual-fallback {
+  font-size: 24px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.visual-card__label {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.visual-card__name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.visual-card__value {
+  font-size: 9px;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--vscode-editor-font-family);
+}
+
+/* ─── Visual Context Menu ─────────────────────────────────────────────── */
+
+.visual-context-menu {
+  position: fixed;
+  background: var(--vscode-menu-background);
+  border: 1px solid var(--vscode-menu-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+}
+
+.context-menu-item {
+  background: none;
+  border: none;
+  color: var(--vscode-menu-foreground);
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.context-menu-item:hover {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+.context-menu-item .icon {
+  font-family: codicon;
+  font-size: 14px;
 }

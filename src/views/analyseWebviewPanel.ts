@@ -10,6 +10,7 @@
 
 import * as vscode from "vscode";
 import { TokenScanner } from "../scanner/tokenScanner";
+import { DynamicCssVarIndex } from "../scanner/dynamicCssVarIndex";
 import {
   AnalysisReport,
   analyzeDesignSystem,
@@ -45,6 +46,7 @@ let currentPanel: AnalysePanel | null = null;
  */
 export function openAnalyse(
   scanner: TokenScanner,
+  dynamicCssVarIndex: DynamicCssVarIndex,
   extensionUri: vscode.Uri,
 ): void {
   if (currentPanel) {
@@ -60,7 +62,7 @@ export function openAnalyse(
     if (currentPanel) return;
   }
   try {
-    currentPanel = new AnalysePanel(scanner, extensionUri);
+    currentPanel = new AnalysePanel(scanner, dynamicCssVarIndex, extensionUri);
   } catch (err) {
     // Any failure during construction (HTML build, listener wiring,
     // file-watcher creation, …) would otherwise leave the user with
@@ -96,6 +98,7 @@ class AnalysePanel {
 
   constructor(
     private readonly scanner: TokenScanner,
+    private readonly dynamicCssVarIndex: DynamicCssVarIndex,
     extensionUri: vscode.Uri,
   ) {
     this.panel = vscode.window.createWebviewPanel(
@@ -179,7 +182,7 @@ class AnalysePanel {
     const scopeLabel =
       scopeState.options.find((o) => o.id === scopeState.selectedId)?.label ??
       "All project";
-    const report = await analyzeDesignSystem(this.scanner, { scopeFile });
+    const report = await analyzeDesignSystem(this.scanner, this.dynamicCssVarIndex, { scopeFile });
     this.rebuildWatchedPaths(report);
     this.hasReport = true;
     this.send({

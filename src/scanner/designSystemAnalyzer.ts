@@ -22,6 +22,7 @@
 
 import * as vscode from "vscode";
 import { TokenScanner } from "./tokenScanner";
+import { DynamicCssVarIndex } from "./dynamicCssVarIndex";
 import { findLiterals, LiteralKind } from "./literalFinder";
 import { TokenValueIndex } from "./tokenValueIndex";
 import { resolveReference } from "./tokenNameParser";
@@ -127,6 +128,7 @@ export interface AnalyzeOptions {
 
 export async function analyzeDesignSystem(
   scanner: TokenScanner,
+  dynamicCssVarIndex: DynamicCssVarIndex,
   opts: AnalyzeOptions = {},
 ): Promise<AnalysisReport> {
   const started = Date.now();
@@ -154,7 +156,8 @@ export async function analyzeDesignSystem(
   const incoherences = detectIncoherences(tokens);
   const duplicateClusters = detectDuplicates(tokens);
 
-  const coverageScan = await computeCoverage(allTokens, rootPath, activeScopes);
+  await dynamicCssVarIndex.ensureReady();
+  const coverageScan = await computeCoverage(allTokens, rootPath, activeScopes, dynamicCssVarIndex);
 
   const unusedTokens = tokens
     .filter((t) => !coverageScan.referencedNames.has(t.name))
@@ -410,6 +413,7 @@ async function computeCoverage(
   allTokens: readonly DesignToken[],
   rootPath: string | null,
   activeScopes: readonly ConfiguredScope[],
+  dynamicCssVarIndex: DynamicCssVarIndex,
 ): Promise<CoverageScan> {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri;
   if (!root || !rootPath) {
@@ -499,6 +503,7 @@ async function computeCoverage(
         externalPrefixes,
         referenced,
         broken,
+        dynamicCssVarIndex,
       );
       tokenised += countMatches(masked, CSS_REF_RE);
 
@@ -563,6 +568,7 @@ function collectCssRefs(
   externalPrefixes: readonly string[],
   referenced: Set<string>,
   broken: BrokenReference[],
+  dynamicCssVarIndex: DynamicCssVarIndex,
 ): void {
   for (const m of text.matchAll(CSS_REF_RE)) {
     const captured = m[1];
@@ -577,6 +583,7 @@ function collectCssRefs(
       continue;
     }
     if (externalPrefixes.some((p) => name.startsWith(p))) continue;
+    if (dynamicCssVarIndex.has(name)) continue;
     broken.push({
       name: m[0],
       filePath,
