@@ -1,6 +1,6 @@
 # Token Flow — Release Notes
 
-## v0.1.2 — 2026-05-23 · Contextual Variables Integration
+## v0.1.1 — 2026-05-23 · Contextual Variables Integration
 
 - **DynamicCssVarIndex**: Token Flow now globally indexes contextual CSS variables across your entire workspace, including `CSS`, `SCSS`, `Vue`, `React`, and `Angular` styles.
 - **Show Contextual Variable References (`Ctrl+T` / `Alt+T`)**: Triggering "Show Alternatives" on a known contextual variable opens a QuickPick listing all its declarations and usages across the project (sorted by static vs runtime).
