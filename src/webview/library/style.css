@@ -1,0 +1,643 @@
+/*
+ * Library webview styling. Theme via var(--vscode-…) throughout so
+ * the panel blends into light / dark / high-contrast themes without
+ * per-theme branching.
+ *
+ * Layout: sticky header (search + chip rows) + scrollable list. Rows
+ * are draggable strips with hover-revealed action buttons and an
+ * optional `+N` badge that triggers an absolutely-positioned variant
+ * popover.
+ */
+
+:root {
+  color-scheme: dark light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background, transparent);
+  /* Two-zone layout: the header stays put, the body becomes the only
+     scroll container. Lets category headers stick at `top: 0` inside
+     the body without competing with the panel header. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Header (search + chip rows) ────────────────────────────────── */
+
+.library-header {
+  /* Lives outside the scroll container — flex layout above keeps it
+     always visible. No more `position: sticky`. */
+  flex-shrink: 0;
+  padding: 8px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ─── Scope strip ───────────────────────────────────────────────── */
+
+.scope-strip {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-toolbar-hoverBackground, transparent);
+  border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.1s ease, border-color 0.1s ease;
+}
+
+.scope-strip:hover {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.scope-strip__icon {
+  flex-shrink: 0;
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.scope-strip__label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.scope-strip__value {
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.scope-strip--idle .scope-strip__value {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+/* ─── Search row + filter dropdown ─────────────────────────────── */
+
+.library-header__row {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+}
+
+#library-search {
+  flex: 1;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  outline: none;
+}
+
+.filter-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.filter-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 28px;
+  height: 100%;
+  min-height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+}
+
+.filter-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.filter-btn[aria-expanded="true"] {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-btn__count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 0.65em;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  /* Active-filter count is the one place we still want the blue
+     emphasis — it tells the user "your view is restricted" at a
+     glance and there's no other affordance for that. */
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-radius: 9999px;
+}
+
+.filter-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  padding: 8px;
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-editorWidget-border, transparent));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-panel[hidden] {
+  display: none;
+}
+
+.filter-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-panel__title {
+  margin: 0;
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-row input {
+  margin: 2px 0 0 0;
+  cursor: pointer;
+}
+
+.toggle-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toggle-row__title {
+  font-size: 0.9em;
+  color: var(--vscode-foreground);
+}
+
+.toggle-row__hint {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.filter-panel__divider {
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+}
+
+#library-search:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.chip:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.chip--active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+/* ─── Body ───────────────────────────────────────────────────────── */
+
+#library-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 8px;
+}
+
+.library-empty {
+  padding: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  margin: 0;
+}
+
+.category {
+  margin-bottom: 4px;
+}
+
+/* Category header — clickable to collapse; stays pinned to the top of
+   the scroll area while you scroll through its tokens (IntelliJ-style
+   sticky-scroll). The chevron rotates with the collapsed state.
+   `top: -1px` hides the 1px gap between adjacent headers when one is
+   stickied right under another (sub-family + family). */
+.category__header {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-descriptionForeground));
+  background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+}
+
+.category__header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.category__chevron {
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.12s ease;
+}
+
+.category[data-collapsed="true"] > .category__header .category__chevron {
+  transform: rotate(-90deg);
+}
+
+.category__title {
+  flex: 1;
+}
+
+.category__count {
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
+
+.category[data-collapsed="true"] > .tokens,
+.category[data-collapsed="true"] > .family,
+.category[data-collapsed="true"] > .subfamily-header {
+  display: none;
+}
+
+/* ─── Sub-family grouping (level 1 + 2 headers) ──────────────────── */
+
+.family {
+  display: contents;
+}
+
+.family-header,
+.subfamily-header {
+  margin: 0;
+  font-family: inherit;
+  position: sticky;
+  /* Sub-family headers sit JUST BELOW the parent category header. The
+     header height is approximately 1.7em with padding — close enough
+     to hide the gap without measuring. The browser caps multiple
+     sticky elements at the same `top` value so they stack naturally
+     as the user scrolls a long category. */
+  top: 1.7em;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 22px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  font-size: 0.72em;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.subfamily-header {
+  top: 3.1em;
+  padding-left: 32px;
+  font-weight: 500;
+  font-style: italic;
+  z-index: 1;
+}
+
+.tokens.tokens--indent-1 {
+  padding-left: 12px;
+}
+
+.tokens.tokens--indent-2 {
+  padding-left: 24px;
+}
+
+.tokens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ─── Token row ──────────────────────────────────────────────────── */
+
+.token {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  /* The row is draggable but not clickable as a whole — surface this
+     to the user via the `grab` cursor on the row body, while the
+     action buttons keep `cursor: pointer`. */
+  cursor: grab;
+  user-select: none;
+  outline: none;
+  /* Reserve space for the action buttons so the layout doesn't shift
+     between idle and :hover. */
+  position: relative;
+}
+
+.token:active {
+  cursor: grabbing;
+}
+
+.token:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.token__swatch {
+  flex-shrink: 0;
+  /* Bumped from 14 → 18: at 14px the category glyphs (↔, ⏱, T, ◖)
+     were nearly illegible on retina screens. 18px sits comfortably on
+     the row's 22px button line without bloating the row height. */
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  box-shadow: inset 0 0 0 0.5px var(--vscode-foreground);
+}
+
+/* Non-color tokens (metrics, radius, typography…): stay neutral. The
+   blue VSCode badge background is reserved for COLOR swatches and the
+   `+N` variant indicator was reading as too loud here. We fall back to
+   a faint surface + descriptionForeground glyph so the row's visual
+   weight sits on the name, not on the category icon. */
+.token__swatch--glyph {
+  background: var(--vscode-toolbar-hoverBackground, transparent);
+  color: var(--vscode-descriptionForeground);
+  box-shadow: inset 0 0 0 0.5px var(--vscode-panel-border, transparent);
+}
+
+.token__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.token__name {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.95em;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token__value {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Trailing actions (badge + copy + goto) ─────────────────────── */
+
+.token__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  /* Copy + goto are hover-revealed so the idle row reads as clean
+     name-value-(+N). The badge stays visible because it's the only
+     hint that variants exist. */
+}
+
+.token__btn {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  font: inherit;
+  /* Bumped from 0.95em → 1.15em so the copy glyph (⎘) sits at the same
+     optical weight as the arrow (↗) next to it. They render with quite
+     different built-in metrics so they need a small per-glyph nudge. */
+  font-size: 1.15em;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.token:hover .token__btn,
+.token:focus-within .token__btn {
+  opacity: 1;
+}
+
+.token__btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.token__btn:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+  opacity: 1;
+}
+
+.token__badge {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 0.7em;
+  /* Discreet variant counter — same neutral palette as the non-color
+     swatch so "+3" doesn't fight visually with the row's main content.
+     The user can still see it (faint background + bordered pill) but
+     it no longer screams "click me" the way the blue badge did. */
+  color: var(--vscode-descriptionForeground);
+  background: transparent;
+  border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.token__badge:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.token__badge:hover,
+.token__badge:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+/* ─── Variant popover ────────────────────────────────────────────── */
+
+.variant-popover {
+  position: fixed;
+  z-index: 100;
+  max-width: 480px;
+  padding: 10px 12px;
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-editorWidget-border, transparent));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  font-size: 0.9em;
+}
+
+.variant-popover__title {
+  font-family: var(--vscode-editor-font-family);
+  font-weight: 600;
+  font-size: 0.95em;
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+
+.variant-popover__sub {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 8px;
+}
+
+.variant-table {
+  border-collapse: collapse;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.85em;
+}
+
+.variant-table th,
+.variant-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+}
+
+.variant-table__theme {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-sideBarSectionHeader-background, transparent);
+}
+
+.variant-table__sub {
+  font-size: 0.8em;
+  font-weight: 500;
+  color: var(--vscode-foreground);
+}
+
+.variant-table__value {
+  white-space: nowrap;
+}
+
+.variant-table__value code {
+  font-family: var(--vscode-editor-font-family);
+}
+
+.variant-table__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+  box-shadow: inset 0 0 0 0.5px var(--vscode-foreground);
+}

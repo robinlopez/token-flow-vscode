@@ -1,0 +1,16 @@
+# Files excluded from the published .vsix bundle.
+# Everything not needed at runtime should live here to keep the package small.
+
+.vscode/**
+.vscode-test/**
+src/**
+node_modules/**
+.gitignore
+.eslintrc.json
+esbuild.js
+tsconfig.json
+**/*.map
+**/*.ts
+RELEASE_NOTES_*.md
+
+# Keep: out/extension.js, package.json, README.md, CHANGELOG.md, LICENSE, media/

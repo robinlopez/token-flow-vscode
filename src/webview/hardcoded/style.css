@@ -1,0 +1,529 @@
+/*
+ * Hardcoded panel styling. Rows are dense IntelliJ-style strips with
+ * a clear visual progression `literal → token` and a stack of action
+ * buttons on the right. Theme variables drive every color so the panel
+ * blends into light, dark and high-contrast themes without per-theme
+ * branching.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background, transparent);
+}
+
+/* ─── Header ─────────────────────────────────────────────────────── */
+
+.hardcoded-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hardcoded-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hardcoded-header__row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.hardcoded-header h2 {
+  margin: 0;
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+  /* Title carries the active filename — must truncate cleanly when the
+     panel gets narrow. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+/* ─── Search input + filter dropdown ────────────────────────────── */
+
+#hardcoded-search {
+  flex: 1;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  outline: none;
+}
+
+#hardcoded-search:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.select-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.select-all input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.filter-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.filter-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 28px;
+  min-height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+}
+
+.filter-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.filter-btn[aria-expanded="true"] {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.filter-btn__count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  font-size: 0.65em;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-radius: 9999px;
+}
+
+.filter-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 200px;
+  padding: 8px;
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-editorWidget-border, transparent));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-panel[hidden] {
+  display: none;
+}
+
+.filter-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-panel__title {
+  margin: 0;
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 9999px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.chip--active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+.ghost-btn {
+  font: inherit;
+  padding: 2px 8px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ghost-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.hardcoded-empty {
+  padding: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  margin: 0;
+}
+
+/* ─── Hit rows ───────────────────────────────────────────────────── */
+
+.hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hits {
+  /* Width of the literal column — read at row level via `var()`. Sizing
+     it here lets the whole list share one column so the arrow + target
+     line up across rows even when literals differ (`4px` vs `16px` vs
+     `#fefefe`). Bumped from 0 because before this the column was 1fr,
+     which left every row negotiating its own width. */
+  --literal-col: 88px;
+}
+
+.hit {
+  display: grid;
+  /* select | literal | arrow | target | line | actions */
+  grid-template-columns: 24px var(--literal-col) auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.85em;
+}
+
+.hit--selected {
+  background: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
+}
+
+.hit__select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.hit__select input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.hit:last-child {
+  border-bottom: none;
+}
+
+.hit:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* ─── Cells inside a row ─────────────────────────────────────────── */
+
+.hit__literal-cell,
+.hit__target-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hit__literal,
+.hit__target {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.hit__literal {
+  color: var(--vscode-symbolIcon-colorForeground, var(--vscode-foreground));
+}
+
+.hit__target {
+  color: var(--vscode-foreground);
+}
+
+.hit__counter {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-font-family);
+}
+
+.hit__arrow {
+  color: var(--vscode-descriptionForeground);
+  flex-shrink: 0;
+}
+
+.hit__line {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Swatch ─────────────────────────────────────────────────────── */
+
+.swatch {
+  flex-shrink: 0;
+  /* Bumped from 12 → 16 so non-color category glyphs (↔, ⏱) are
+     readable at panel default density. Color swatches benefit too. */
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  /* Hairline outline keeps light swatches readable on dark themes. */
+  box-shadow: inset 0 0 0 0.5px var(--vscode-foreground);
+}
+
+/* Non-color glyph swatches (LENGTH ↔, DURATION ⏱) — stay neutral
+   instead of the loud blue badge background. Same treatment as the
+   Library panel: subtle surface + descriptionForeground text. */
+.swatch--glyph {
+  background: var(--vscode-toolbar-hoverBackground, transparent);
+  color: var(--vscode-descriptionForeground);
+  box-shadow: inset 0 0 0 0.5px var(--vscode-panel-border, transparent);
+}
+
+/* ─── Action buttons ─────────────────────────────────────────────── */
+
+.hit__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.hit__btn {
+  /* Reset native button — we want a tight icon-only look. */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  font: inherit;
+  font-size: 0.95em;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.hit__btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+  border-color: var(--vscode-toolbar-hoverOutline, transparent);
+}
+
+.hit__btn:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* The primary "apply" button gets a subtle accent so users instinctively
+   reach for it without scanning the whole strip. */
+.hit__btn--primary {
+  color: var(--vscode-button-foreground, var(--vscode-foreground));
+  background: var(--vscode-button-background);
+}
+
+.hit__btn--primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.hit__btn--cycle {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* SVG icons sit at the natural button center without extra tweaking
+   because the button is flex/center-aligned. Stroke / fill inherit
+   `currentColor` so the primary "apply" tint just works. */
+.hit__btn svg {
+  display: block;
+}
+
+/* ─── Candidate dropdown ─────────────────────────────────────────── */
+
+/* Wrapper around the ▾ button so the dropdown can anchor to it. */
+.hit__cycle-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.candidate-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 240px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 0;
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-editorWidget-border, transparent));
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  font-family: var(--vscode-font-family);
+  font-size: 0.9em;
+}
+
+.candidate-dropdown[hidden] {
+  display: none;
+}
+
+.candidate-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.candidate-dropdown__item:hover,
+.candidate-dropdown__item:focus {
+  background: var(--vscode-list-hoverBackground);
+  outline: none;
+}
+
+.candidate-dropdown__item--active {
+  background: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
+  font-weight: 600;
+}
+
+.candidate-dropdown__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.candidate-dropdown__check {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--vscode-charts-blue, var(--vscode-foreground));
+  text-align: center;
+}
+
+/* ─── Bulk bar ───────────────────────────────────────────────────── */
+
+.bulk-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+  border-top: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.bulk-bar[hidden] {
+  display: none;
+}
+
+.bulk-bar__count {
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.bulk-bar__spacer {
+  flex: 1;
+}
+
+.primary-btn {
+  font: inherit;
+  padding: 4px 12px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: 1px solid var(--vscode-button-background);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.primary-btn:hover {
+  background: var(--vscode-button-hoverBackground);
+  border-color: var(--vscode-button-hoverBackground);
+}
+
+.primary-btn:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}

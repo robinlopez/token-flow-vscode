@@ -1,0 +1,235 @@
+/*
+ * Alternatives picker — modal-feel card centered in the editor area.
+ * Pulls every color from VSCode CSS variables so light / dark / HC
+ * themes work without per-theme rules. Spacing tuned for a
+ * "designer-grade" feel: generous padding, tabular-numeric values,
+ * crisp dividers, subtle shadow.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+#picker-root {
+  /* Position the card slightly above center — gives a "spotlight"
+     feel and reserves headroom for the dropdown to grow vertically
+     without jumping. */
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 24px;
+  min-height: 100%;
+}
+
+.picker {
+  width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 8px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+/* ─── Header (title + subtitle + search) ─────────────────────────── */
+
+.picker__header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.picker__title {
+  margin: 0;
+  font-size: 1.05em;
+  font-weight: 600;
+  /* Token names + literals can be long; clamp with ellipsis so the
+     header stays one line. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__subtitle {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.picker__search {
+  width: 100%;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 4px;
+  outline: none;
+}
+
+.picker__search:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+/* ─── List + rows ────────────────────────────────────────────────── */
+
+.picker__list {
+  max-height: min(480px, calc(100vh - 280px));
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.picker__empty {
+  padding: 24px 20px;
+  margin: 0;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.picker__group {
+  /* Section header sits BETWEEN groups, with vertical breathing room
+     so it doesn't read as part of the row beneath it. */
+  padding: 12px 20px 4px;
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--vscode-descriptionForeground);
+  /* First group skips the top padding so the list starts flush. */
+}
+
+.picker__group:first-child {
+  padding-top: 6px;
+}
+
+.picker__row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.picker__row--selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.picker__row--selected .picker__value,
+.picker__row--selected .picker__variants {
+  /* On the selected row, the brand-blue background eats most contrast
+     — re-tint the secondary text to the same foreground for legibility. */
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 0.9;
+}
+
+/* ─── Icon column ────────────────────────────────────────────────── */
+
+.picker__swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  /* Hairline outline keeps light swatches visible on light themes
+     and dark swatches on dark themes — the trick is using `inset`
+     so the outline is rendered ON TOP of the fill rather than
+     widening the disc. */
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.25),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+.picker__glyph {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+}
+
+.picker__row--selected .picker__glyph {
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+/* ─── Name + value ───────────────────────────────────────────────── */
+
+.picker__name {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.95em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.88em;
+  /* Tabular numerics so a column of hex values / px sizes lines up
+     vertically — readability win for designers scanning the list. */
+  font-variant-numeric: tabular-nums;
+}
+
+.picker__variants {
+  color: var(--vscode-charts-orange, var(--vscode-foreground));
+  font-weight: 500;
+}
+
+.picker__value {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ─── Footer (keyboard hints) ────────────────────────────────────── */
+
+.picker__footer {
+  display: flex;
+  gap: 16px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--vscode-editorWidget-border, transparent);
+  font-size: 0.78em;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editorWidget-background, transparent);
+}
+
+.picker__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.picker__footer kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.85em;
+  color: var(--vscode-foreground);
+  background: var(--vscode-keybindingLabel-background, rgba(127, 127, 127, 0.15));
+  border: 1px solid var(--vscode-keybindingLabel-border, transparent);
+  border-bottom-color: var(--vscode-keybindingLabel-bottomBorder, var(--vscode-keybindingLabel-border, transparent));
+  border-radius: 3px;
+}

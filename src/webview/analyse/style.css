@@ -1,0 +1,563 @@
+/*
+ * Analyse dashboard styling. Layout mirrors the IntelliJ AnalyzePanel:
+ * header (gauge + summary) → sub-score grid → accordion sections.
+ * Score-band colours follow the IntelliJ palette so the user gets the
+ * same red/amber/green visual cue on either plugin.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+#analyse-root {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.toolbar__label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.toolbar__select {
+  font: inherit;
+  padding: 4px 8px;
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, transparent));
+  border-radius: 3px;
+}
+
+.stale-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--vscode-editorWarning-background, #fff4c2);
+  border: 1px solid var(--vscode-editorWarning-border, #e5b800);
+  border-radius: 4px;
+  color: #6b4f00;
+}
+
+.stale-banner__icon {
+  font-size: 1.1em;
+}
+
+.stale-banner__text {
+  flex: 1;
+}
+
+.stale-banner__rerun {
+  font: inherit;
+  font-weight: 600;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.stale-banner__rerun:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.stale-banner__dismiss {
+  font: inherit;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.stale-banner__dismiss:hover {
+  opacity: 1;
+}
+
+.analyse-empty {
+  padding: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  margin: 0;
+}
+
+/* ─── Header (gauge + summary) ─────────────────────────────────── */
+
+.analyse-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 20px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 6px;
+}
+
+.analyse-summary {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analyse-summary__title {
+  font-weight: 600;
+  font-size: 1.05em;
+  color: var(--vscode-charts-purple, var(--vscode-foreground));
+}
+
+.analyse-summary__scope,
+.analyse-summary__meta {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+.ghost-btn {
+  font: inherit;
+  padding: 6px 14px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.ghost-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+
+/* ─── Score gauge ──────────────────────────────────────────────── */
+
+.gauge {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.gauge svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(0deg);
+}
+
+.gauge__track {
+  stroke: var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3));
+}
+
+.gauge__arc {
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+.gauge[data-band="good"] .gauge__arc { stroke: #4caf50; }
+.gauge[data-band="medium"] .gauge__arc { stroke: #f9a825; }
+.gauge[data-band="bad"] .gauge__arc { stroke: #e53935; }
+
+.gauge__inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.gauge__grade {
+  font-size: 2.6em;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--vscode-foreground);
+}
+
+.gauge__score {
+  font-size: 0.75em;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ─── Sub-score grid ───────────────────────────────────────────── */
+
+.subscore-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.subscore-card {
+  padding: 12px 14px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.subscore-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.subscore-card__axis {
+  font-weight: 600;
+}
+
+.subscore-card__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+.subscore-card__track {
+  height: 6px;
+  background: var(--vscode-input-background, rgba(127, 127, 127, 0.15));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.subscore-card__fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.subscore-card[data-band="good"] .subscore-card__fill { background: #4caf50; }
+.subscore-card[data-band="medium"] .subscore-card__fill { background: #f9a825; }
+.subscore-card[data-band="bad"] .subscore-card__fill { background: #e53935; }
+
+.subscore-card__caption {
+  font-size: 0.82em;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ─── Accordion section ────────────────────────────────────────── */
+
+.section {
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.section__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.section__header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.section__chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  color: var(--vscode-descriptionForeground);
+  width: 12px;
+}
+
+.section[data-expanded="true"] > .section__header .section__chevron {
+  transform: rotate(90deg);
+}
+
+.section__title {
+  flex: 1;
+  font-weight: 600;
+  color: var(--vscode-charts-purple, var(--vscode-foreground));
+}
+
+.section__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-charts-purple, var(--vscode-foreground));
+  font-weight: 600;
+}
+
+.section__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--vscode-charts-red, currentColor);
+  color: var(--vscode-charts-red, var(--vscode-descriptionForeground));
+  font-size: 0.7em;
+  font-weight: 700;
+  cursor: help;
+}
+
+.section__body {
+  display: none;
+  padding: 0 16px 12px;
+}
+
+.section[data-expanded="true"] > .section__body {
+  display: block;
+}
+
+/* ─── List rows ────────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row__sub {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  margin-top: 2px;
+}
+
+.row__value {
+  color: var(--vscode-descriptionForeground);
+  margin-left: 6px;
+}
+
+.row__broken-name {
+  color: var(--vscode-errorForeground, #db5858);
+}
+
+.more {
+  display: inline-block;
+  padding: 6px 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  text-decoration: none;
+}
+
+.more:hover {
+  color: var(--vscode-textLink-foreground);
+}
+
+/* ─── Hardcoded cluster (nested accordion) ─────────────────────── */
+
+.cluster {
+  border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
+}
+
+.cluster:last-child {
+  border-bottom: none;
+}
+
+.cluster__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cluster__header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.cluster__chevron {
+  display: inline-block;
+  width: 12px;
+  color: var(--vscode-descriptionForeground);
+  transition: transform 0.15s ease;
+}
+
+.cluster[data-expanded="true"] > .cluster__header .cluster__chevron {
+  transform: rotate(90deg);
+}
+
+.cluster__literal {
+  font-weight: 600;
+  color: var(--vscode-charts-purple, var(--vscode-foreground));
+}
+
+.cluster__sep,
+.cluster__count {
+  color: var(--vscode-descriptionForeground);
+}
+
+.cluster__count b {
+  color: var(--vscode-charts-purple, var(--vscode-foreground));
+}
+
+.cluster__match {
+  color: var(--vscode-charts-green, #5fa970);
+  font-size: 0.85em;
+}
+
+.cluster__body {
+  display: none;
+  padding: 4px 0 8px 28px;
+}
+
+.cluster[data-expanded="true"] > .cluster__body {
+  display: block;
+}
+
+.occurrence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.occurrence__path {
+  flex: 1;
+  font-size: 0.9em;
+  font-family: var(--vscode-editor-font-family);
+}
+
+.occurrence__parent {
+  color: var(--vscode-descriptionForeground);
+  margin-left: 6px;
+}
+
+/* ─── Coverage block ───────────────────────────────────────────── */
+
+.coverage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coverage__summary {
+  padding: 4px 0;
+}
+
+.coverage__meta {
+  color: var(--vscode-descriptionForeground);
+  margin-left: 6px;
+  font-size: 0.85em;
+}
+
+.coverage__sub {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+.source {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "top    btn"
+    "bar    btn";
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, transparent);
+}
+
+.source:last-child {
+  border-bottom: none;
+}
+
+.source__top {
+  grid-area: top;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.source__name {
+  font-weight: 500;
+}
+
+.source__caption {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.source__bar {
+  grid-area: bar;
+  height: 6px;
+  background: var(--vscode-input-background, rgba(127, 127, 127, 0.15));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.source__fill {
+  height: 100%;
+  background: var(--vscode-charts-blue, var(--vscode-progressBar-background));
+  border-radius: 3px;
+}
+
+.source > .target-btn {
+  grid-area: btn;
+}
+
+/* ─── Target button ────────────────────────────────────────────── */
+
+.target-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--vscode-editorWidget-border, transparent);
+  background: transparent;
+  color: var(--vscode-charts-blue, var(--vscode-foreground));
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.target-btn:hover {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.target-btn svg {
+  display: block;
+}

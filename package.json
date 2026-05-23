@@ -1,0 +1,235 @@
+{
+  "name": "token-flow",
+  "displayName": "Token Flow",
+  "description": "Bridging the gap between Design and Code. Find, insert, swap and audit design tokens (SCSS · CSS · TS/JS) without leaving your editor.",
+  "version": "0.1.0",
+  "publisher": "robin-lopez",
+  "license": "MIT",
+  "icon": "media/pluginIcon.png",
+  "categories": [
+    "Other",
+    "Visualization",
+    "Linters"
+  ],
+  "keywords": [
+    "design tokens",
+    "design system",
+    "scss",
+    "css variables",
+    "theming"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:scss",
+    "onLanguage:sass",
+    "onLanguage:css",
+    "onLanguage:less",
+    "onLanguage:typescript",
+    "onLanguage:javascript",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascriptreact"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "Token Flow",
+      "properties": {
+        "tokenFlow.scopes": {
+          "type": "array",
+          "default": [],
+          "description": "Named scopes. Each scope groups source paths under a rootPath; when the active file is inside a scope's rootPath, that scope's tokens (plus every common scope) are proposed. An empty list falls back to tokenFlow.sourcePaths as an implicit common scope.",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "User-facing label (e.g. mobile, desktop, common)."
+              },
+              "rootPath": {
+                "type": "string",
+                "default": "",
+                "description": "Workspace-relative folder. Empty = common scope (always active)."
+              },
+              "sourcePaths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [],
+                "description": "Files and folders containing the tokens (Source of Truth)."
+              },
+              "whitelistPaths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [],
+                "description": "Files whose variables are external/known — won't be flagged as broken refs nor proposed as hardcoded-replacement candidates."
+              },
+              "excludedPaths": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [],
+                "description": "Folders/files inside the root to skip during analysis (e.g. unrelated sub-modules)."
+              }
+            }
+          }
+        },
+        "tokenFlow.sourcePaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Back-compat fallback for when tokenFlow.scopes is empty — treated as the source paths of an implicit common scope. New projects should prefer tokenFlow.scopes."
+        },
+        "tokenFlow.hover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show resolved value and per-mode variants when hovering a token reference."
+        },
+        "tokenFlow.alternatives.pickerStyle": {
+          "type": "string",
+          "enum": ["webviewBeside", "completion"],
+          "default": "webviewBeside",
+          "enumDescriptions": [
+            "Custom webview opened in the side column — richer visuals (large swatches, real group dividers), auto-closes when focus moves back to the editor.",
+            "Native IntelliSense popup floating under the caret — closer to IntelliJ; color swatches via the built-in Color kind, groups conveyed via the right-aligned label description."
+          ],
+          "description": "How the Alt+T 'Show Token Alternatives' picker is rendered."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "tokenFlow.refreshIndex",
+        "title": "Refresh Token Index",
+        "category": "Token Flow",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "tokenFlow.showAllTokens",
+        "title": "Show All Tokens",
+        "category": "Token Flow"
+      },
+      {
+        "command": "tokenFlow.revealDeclaration",
+        "title": "Reveal Token Declaration",
+        "category": "Token Flow"
+      },
+      {
+        "command": "tokenFlow.showAlternatives",
+        "title": "Show Token Alternatives",
+        "category": "Token Flow"
+      },
+      {
+        "command": "tokenFlow.clearFilters",
+        "title": "Clear Library Filters",
+        "category": "Token Flow",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "tokenFlow.refreshHardcoded",
+        "title": "Refresh Hardcoded Values",
+        "category": "Token Flow",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "tokenFlow.openAnalyse",
+        "title": "Open Analyse Dashboard",
+        "category": "Token Flow",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "tokenFlow.openSettings",
+        "title": "Configure Scopes…",
+        "category": "Token Flow",
+        "icon": "$(settings-gear)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "tokenFlow.showAlternatives",
+        "key": "alt+t",
+        "when": "editorTextFocus && resourceLangId =~ /^(scss|sass|css|less|typescript|typescriptreact|javascript|javascriptreact|json|jsonc)$/"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tokenFlow",
+          "title": "Token Flow",
+          "icon": "media/activity-bar.svg"
+        }
+      ]
+    },
+    "views": {
+      "tokenFlow": [
+        {
+          "type": "webview",
+          "id": "tokenFlow.library",
+          "name": "Library",
+          "contextualTitle": "Token Flow",
+          "icon": "media/activity-bar.svg"
+        },
+        {
+          "type": "webview",
+          "id": "tokenFlow.hardcoded",
+          "name": "Hardcoded",
+          "contextualTitle": "Token Flow",
+          "icon": "media/activity-bar.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "tokenFlow.clearFilters",
+          "when": "view == tokenFlow.library && tokenFlow.library.hasFilters",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tokenFlow.refreshIndex",
+          "when": "view == tokenFlow.library",
+          "group": "navigation@2"
+        },
+        {
+          "command": "tokenFlow.openSettings",
+          "when": "view == tokenFlow.library",
+          "group": "navigation@3"
+        },
+        {
+          "command": "tokenFlow.refreshHardcoded",
+          "when": "view == tokenFlow.hardcoded",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tokenFlow.openAnalyse",
+          "when": "view == tokenFlow.library",
+          "group": "navigation@0"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "tokenFlow.revealDeclaration",
+          "when": "false"
+        }
+      ]
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/robinlopez/token-flow-vscode.git"
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "compile": "tsc -p . --noEmit && tsc -p tsconfig.webview.json --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,616 @@
+/*
+ * Settings webview styling. Full-tab panel — comfortable horizontal
+ * real estate, max-width clamp keeps form lines readable on wide
+ * monitors. All colors pull from VSCode CSS variables so theming
+ * Just Works.
+ *
+ * Layout: header on top, master-detail two-column grid below
+ * (220px sidebar + flex content). On narrow screens the grid stacks
+ * vertically.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+#settings-root {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-empty {
+  padding: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  margin: 0;
+}
+
+/* ─── Header ─────────────────────────────────────────────────────── */
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+}
+
+.settings-header__titleblock {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-header__title {
+  margin: 0;
+  font-size: 1.4em;
+  font-weight: 600;
+}
+
+.settings-header__subtitle {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.settings-header__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ghost-btn {
+  font: inherit;
+  padding: 4px 12px;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.ghost-btn:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.ghost-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Empty state ────────────────────────────────────────────────── */
+
+.settings-empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 24px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 4px;
+}
+
+.settings-empty-card h2 {
+  margin: 0;
+  font-size: 1.1em;
+}
+
+.settings-empty-card p {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ─── Master-detail layout ───────────────────────────────────────── */
+
+.settings-master-detail {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 700px) {
+  .settings-master-detail {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Master (scope list) ────────────────────────────────────────── */
+
+.scope-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 4px;
+}
+
+.scope-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scope-list__row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  outline: none;
+}
+
+.scope-list__row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.scope-list__row--selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.scope-list__name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Spans the second column row 1 — meta sits below on row 2. */
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.scope-list__meta {
+  grid-column: 1;
+  grid-row: 2;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope-list__row--selected .scope-list__meta {
+  color: var(--vscode-list-activeSelectionForeground);
+  opacity: 0.85;
+}
+
+.scope-list__remove {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.scope-list__row:hover .scope-list__remove,
+.scope-list__row:focus-within .scope-list__remove {
+  opacity: 1;
+}
+
+.scope-list__add {
+  margin-top: 4px;
+  align-self: stretch;
+  justify-content: center;
+}
+
+/* ─── Detail (selected scope) ────────────────────────────────────── */
+
+.scope-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0; /*                                            flex-shrink truncation guard */
+}
+
+/* ─── Scope basics form ──────────────────────────────────────────── */
+
+.scope-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 4px;
+}
+
+.scope-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scope-form__label {
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.scope-form__input-wrap {
+  display: flex;
+  gap: 6px;
+}
+
+.scope-form__input {
+  flex: 1;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  outline: none;
+}
+
+.scope-form__input:focus {
+  border-color: var(--vscode-focusBorder);
+}
+
+.scope-form__hint {
+  margin: 4px 0 0;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+/* ─── Path sections (sources / whitelist / excludes) ─────────────── */
+
+.path-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 4px;
+}
+
+.path-section__header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.path-section__title {
+  margin: 0;
+  font-size: 0.95em;
+  font-weight: 600;
+}
+
+.path-section__count {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
+
+.path-section__hint {
+  margin: 0;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+}
+
+.path-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* Keep a stable visible area even when empty so the "Add" button
+     doesn't bounce up against the section header. */
+  min-height: 28px;
+}
+
+.path-list__empty {
+  padding: 6px 8px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  font-size: 0.9em;
+}
+
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+  border-radius: 2px;
+}
+
+.path-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.path-row__text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.path-section__add {
+  align-self: flex-start;
+}
+
+/* ─── Buttons ────────────────────────────────────────────────────── */
+
+.btn {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+
+.btn--primary {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+}
+
+.btn--primary:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.btn--secondary {
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border-color: var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+}
+
+.btn--secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.btn--icon {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+}
+
+.btn--icon:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
+
+.btn:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* ─── Section header (Preferences / Scopes) ─────────────────────── */
+
+.section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.section-header__title {
+  margin: 0;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+
+.section-header__hint {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+/* ─── Preferences section ───────────────────────────────────────── */
+
+.preferences {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border, transparent));
+  border-radius: 6px;
+}
+
+.pref-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pref-row__label {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.pref-row__hint {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+.pref-row__toggle-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Segmented picker (two option cards side by side) — collapses to a
+   stacked layout when the panel is narrow. */
+
+.pref-segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+@media (max-width: 540px) {
+  .pref-segmented {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pref-segmented__card {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--vscode-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.1s ease, background-color 0.1s ease;
+}
+
+.pref-segmented__card:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.pref-segmented__card--active {
+  border-color: var(--vscode-focusBorder);
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground));
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+}
+
+.pref-segmented__title {
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.pref-segmented__desc {
+  font-size: 0.8em;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.35;
+}
+
+.pref-segmented__card--active .pref-segmented__desc {
+  /* When the card is selected the row's background tints the
+     description — keep it readable by lifting the contrast a notch. */
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+  opacity: 0.85;
+}
+
+/* Pill toggle — native checkbox hidden, styled span as the thumb. */
+
+.pref-toggle {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.pref-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.pref-toggle__thumb {
+  position: absolute;
+  inset: 0;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border-radius: 9999px;
+  transition: background-color 0.1s ease;
+}
+
+.pref-toggle__thumb::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--vscode-foreground);
+  border-radius: 50%;
+  transition: transform 0.12s ease, background-color 0.1s ease;
+  opacity: 0.7;
+}
+
+.pref-toggle input:checked + .pref-toggle__thumb {
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+}
+
+.pref-toggle input:checked + .pref-toggle__thumb::after {
+  transform: translateX(16px);
+  background: var(--vscode-button-foreground);
+  opacity: 1;
+}
+
+.pref-toggle input:focus-visible + .pref-toggle__thumb {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+/* Keybindings sub-list — single source of truth is package.json, this
+   block just renders the same data in-panel as a quick reference. */
+
+.pref-keybindings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pref-keybindings li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  color: var(--vscode-foreground);
+}
+
+.pref-kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.85em;
+  background: var(--vscode-keybindingLabel-background, var(--vscode-input-background));
+  color: var(--vscode-keybindingLabel-foreground, var(--vscode-foreground));
+  border: 1px solid var(--vscode-keybindingLabel-border, var(--vscode-panel-border, transparent));
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}

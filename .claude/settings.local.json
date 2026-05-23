@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls *)",
+      "Bash(rtk find *)",
+      "Bash(rtk npm *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk wc *)",
+      "Bash(rtk tsc *)",
+      "Bash(node esbuild.js)",
+      "Bash(npx tsc *)",
+      "Bash(/usr/bin/find \"/Users/robinlopez/Perso/Projet Perso/06_Plugin/token-flow/src\" -name \"*.kt\")",
+      "Bash(/usr/bin/find \"/Users/robinlopez/Perso/Projet Perso/06_Plugin/token-flow/src\" -name \"*.kt\" -print0)",
+      "Bash(rtk read *)",
+      "Bash(rtk git *)",
+      "Bash(git checkout *)",
+      "Bash(rtk gh *)"
+    ]
+  }
+}
