@@ -28,9 +28,12 @@ import { showAlternatives } from "./actions/showAlternatives";
 import { registerAlternativesCompletion } from "./views/alternativesCompletion";
 import { ActiveScopeTracker } from "./services/activeScopeTracker";
 import { DesignToken } from "./model/designToken";
+import { DynamicCssVarIndex } from "./scanner/dynamicCssVarIndex";
 
 export function activate(context: vscode.ExtensionContext): void {
   const scanner = new TokenScanner();
+  const dynamicCssVarIndex = new DynamicCssVarIndex();
+  context.subscriptions.push(dynamicCssVarIndex);
   // The scope tracker is the single source of truth for "which scopes
   // are visible from the active editor?". It listens to active-editor
   // and settings changes and only fires `onDidChange` when the
@@ -222,7 +225,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // Alt+T — Quick Pick of sibling tokens (caret-driven).
     vscode.commands.registerCommand("tokenFlow.showAlternatives", () =>
-      showAlternatives(scanner, scopeTracker, context),
+      showAlternatives(scanner, dynamicCssVarIndex, scopeTracker, context),
     ),
 
     // Wires the native-suggest variant of the Alt+T picker. Idle when
@@ -240,7 +243,7 @@ export function activate(context: vscode.ExtensionContext): void {
       async (_name: string) => {
         // Until row-level alternative buttons land, defer to the
         // caret-driven flow so users still get something useful.
-        await showAlternatives(scanner, scopeTracker, context);
+        await showAlternatives(scanner, dynamicCssVarIndex, scopeTracker, context);
       },
     ),
 
@@ -262,7 +265,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Open (or focus) the Analyse dashboard tab — surfaced as the first
     // title-bar button on the Library view AND in the command palette.
     vscode.commands.registerCommand("tokenFlow.openAnalyse", () =>
-      openAnalyse(scanner, context.extensionUri),
+      openAnalyse(scanner, dynamicCssVarIndex, context.extensionUri),
     ),
 
     // Status-bar click target — opens the dedicated Settings webview

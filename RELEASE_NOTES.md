@@ -1,5 +1,13 @@
 # Token Flow — Release Notes
 
+## v0.1.2 — 2026-05-23 · Contextual Variables Integration
+
+- **DynamicCssVarIndex**: Token Flow now globally indexes contextual CSS variables across your entire workspace, including `CSS`, `SCSS`, `Vue`, `React`, and `Angular` styles.
+- **Show Contextual Variable References (`Ctrl+T` / `Alt+T`)**: Triggering "Show Alternatives" on a known contextual variable opens a QuickPick listing all its declarations and usages across the project (sorted by static vs runtime).
+- **Broken Reference Tolerance**: Contextual CSS variables that exist in the project are no longer flagged as broken references by the analyser.
+
+---
+
 ## v0.1.0 — 2026-05-23 · First public release
 
 Bridging the gap between Design and Code, inside VSCode.

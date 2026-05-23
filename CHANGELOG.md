@@ -2,6 +2,13 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](https://semver.org/).
 
+## [0.1.2] — 2026-05-23
+
+### Added
+- **DynamicCssVarIndex** — global indexing of contextual CSS variables across the workspace (`CSS`, `SCSS`, `Vue`, `React`, `Angular`).
+- **Show Contextual Variable References (Ctrl+T / Alt+T)** — triggering "Show Alternatives" on a known contextual variable now opens a QuickPick listing all its declarations and usages across the project (sorted by static vs runtime).
+- **Broken Reference Tolerance** — Contextual CSS variables that exist in the project are no longer flagged as broken references by the analyser.
+
 ## [0.1.0] — 2026-05-23
 
 First public release.
