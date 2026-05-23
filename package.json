@@ -1,11 +1,15 @@
 {
-  "name": "token-flow",
-  "displayName": "Token Flow",
+  "name": "token-flow-vscode",
+  "displayName": "Token Flow - Design System",
   "description": "Bridging the gap between Design and Code. Find, insert, swap and audit design tokens (SCSS · CSS · TS/JS) without leaving your editor.",
   "version": "0.1.0",
   "publisher": "robin-lopez",
   "license": "MIT",
   "icon": "media/pluginIcon.png",
+  "galleryBanner": {
+    "color": "#1E1E1E",
+    "theme": "dark"
+  },
   "categories": [
     "Other",
     "Visualization",
