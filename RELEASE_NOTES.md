@@ -1,0 +1,104 @@
+# Token Flow — Release Notes
+
+## v0.1.0 — 2026-05-23 · First public release
+
+Bridging the gap between Design and Code, inside VSCode.
+
+This is the inaugural public release of **Token Flow for VSCode**, the
+companion plugin to the [IntelliJ edition](https://github.com/robinlopez/token-flow).
+It ships a complete stylesheet-oriented token workflow: find, insert,
+swap, and audit design tokens without leaving the editor.
+
+---
+
+### Highlights
+
+- **Library webview** — sidebar panel listing every indexed token,
+  grouped by category, with inline color swatches, two-line
+  name + value previews, variant badges, per-row copy / goto buttons,
+  drag-and-drop into the editor, multi-term search and category + kind
+  filter chips.
+
+- **Hardcoded values panel** — follows the active editor and lists
+  every literal that matches an indexed token. Inline swatches,
+  alternative-candidate cycling, jump-to-source and one-click
+  replacement (workspace edit, undoable).
+
+- **Hardcoded-value diagnostics + quick-fix** — `Hint`-level
+  underlines on `#fff`, `14px`, `200ms`, … with a lightbulb that
+  replaces the literal by the canonical `var(--token)` / `$token`.
+  Works through transparent wrappers like `rem-calc(14px)` and ignores
+  `var(--name, fallback)` fallback values.
+
+- **Show Token Alternatives (`Alt+T`)** — custom webview picker (not
+  the native QuickPick) with real CSS swatches, category grouping,
+  pivot pre-selection, keyboard + mouse navigation. Swaps a token
+  reference or "tokenizes" a hardcoded literal in one keystroke.
+
+- **Go to Token Declaration** — `Ctrl+Click` / `F12` / Peek on
+  `var(--x)`, `--x` or `$x` opens the declaration via VSCode's native
+  Definition flow.
+
+- **Hover popup** with resolved value and a per-condition table of
+  variants, including multi-theme grouping (`themeOne → light / dark`).
+
+- **Code completion** triggered after `var(--` or `$`.
+
+- **Analyse dashboard** — full-tab webview with global A→F score on a
+  circular gauge, five sub-axis cards (semantic coherence, usage
+  coverage, duplication, hardcoded pressure, reference integrity),
+  and accordion drilldowns for hardcoded clusters, broken refs,
+  unused / duplicate / incoherent tokens, and per-file coverage.
+
+- **Named scopes** — multi-scope projects supported through
+  `tokenFlow.scopes`. Each scope declares `name`, `rootPath`,
+  `sourcePaths`, `whitelistPaths`, `excludedPaths`. The active editor
+  picks the deepest matching scope automatically; status-bar item
+  shows the current scope.
+
+- **Settings webview** — master-detail editor for scopes with native
+  folder/file pickers and workspace-target persistence. Open via the
+  status-bar item, the `$(settings-gear)` button on the Library, or
+  `Token Flow: Configure Scopes…`.
+
+---
+
+### Supported formats
+
+- SCSS variables (`$color-primary-500`)
+- CSS Custom Properties (`--color-primary-500`)
+- SCSS Maps (`("color-primary-500": #5d3fd3)`)
+- TS/JS preset objects (Style-Dictionary, PrimeUIX) — `'{path.to.token}'`
+
+---
+
+### Known limitations
+
+- **React-Native runtime themes** (`colors.PRIMARY_500`) and callable
+  helpers (`spacing(scale)`) are not in this release — next milestone.
+- **Analyse dashboard is workspace-wide.** Scope selector to come.
+- A handful of polish items (hover-delay slider, autocomplete toggle)
+  are on the roadmap.
+
+See [`PLAN.md`](PLAN.md) for the full roadmap and
+[`CHANGELOG.md`](CHANGELOG.md) for the detailed change log.
+
+---
+
+### Install
+
+Download the `.vsix` from this release and install it via:
+
+```
+code --install-extension token-flow-0.1.0.vsix
+```
+
+Or from VSCode: `Extensions › … › Install from VSIX…`
+
+---
+
+### Thanks
+
+Built alongside the IntelliJ edition to keep parity between the two —
+see [`SHARED_LOGIC.md`](SHARED_LOGIC.md) for the invariants both
+implementations must respect.

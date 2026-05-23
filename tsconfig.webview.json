@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Webview clients run in a browser-ish iframe — turn DOM lib on so
+    // `document`, `window`, `MessageEvent<T>`, `HTMLElement`, etc. are
+    // typed. The host tsconfig deliberately leaves these out so server-
+    // side code can't accidentally reach for browser globals.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "src/webview/library/main.ts",
+    "src/webview/hardcoded/main.ts",
+    "src/webview/analyse/main.ts",
+    "src/webview/settings/main.ts",
+    "src/webview/alternatives/main.ts",
+    "src/webview/shared/**/*",
+    // The webview entry files import from `../../model/designToken` and
+    // `../shared/protocol`, but TS only walks imports if the root files
+    // are in `include`. The two paths above + the import resolution
+    // together pull `model/designToken.ts` and any shared module in.
+    "src/model/designToken.ts"
+  ],
+  "exclude": ["node_modules", "out"]
+}
