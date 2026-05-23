@@ -107,24 +107,6 @@ source.
 - **Theme debugging** — see how a token resolves in Dark vs Light mode via the hover popup.
 - **Preset iteration** — work on a PrimeUIX / Style-Dictionary preset with instant feedback.
 
----
-
-## Roadmap & changelog
-
-- 📍 [`PLAN.md`](PLAN.md) — phases, what's done, what's next
-- 📝 [`CHANGELOG.md`](CHANGELOG.md) — detailed change log per version
-- 🛠️ [`DEVELOPMENT.md`](DEVELOPMENT.md) — build from source, project layout, stack
-- 📋 [`SHARED_LOGIC.md`](SHARED_LOGIC.md) — invariants shared with the IntelliJ edition
-
-## Contributing
-
-Bug reports, feature requests and PRs are welcome. Open an issue first
-for non-trivial changes so we can align on direction.
-
-## License
-
-[MIT](LICENSE) · © Robin Lopez
-
 ## About
 
 Built by **Robin Lopez** — designer & front-end engineer.
