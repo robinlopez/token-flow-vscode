@@ -8,6 +8,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](
 - **DynamicCssVarIndex** — global indexing of contextual CSS variables across the workspace (`CSS`, `SCSS`, `Vue`, `React`, `Angular`).
 - **Show Contextual Variable References (Ctrl+T / Alt+T)** — triggering "Show Alternatives" on a known contextual variable now opens a QuickPick listing all its declarations and usages across the project (sorted by static vs runtime).
 - **Broken Reference Tolerance** — Contextual CSS variables that exist in the project are no longer flagged as broken references by the analyser.
+- **Library Visual Mode** — a new visual presentation mode for tokens aimed at designers and integrators. Switch between "List Mode" and "Visual Mode".
+  - **Colors**: Rich color swatches on checkerboards with dynamic rendering.
+  - **Metrics**: Visual scale previews for spacing, radius, and shadows sorted numerically.
+  - **Responsive & Themes**: Localised sub-variant selection (e.g., light/dark, tablet/desktop) directly per category header in both list and visual modes.
+  - **Accordion Polishing**: Collapsible groups with elegant counters and dynamic SVG chevron animations.
+- **Robust Variant Parsing** — Major improvements to how `parseCondition` detects responsive breakpoints (`min-width`, `max-width`, rem/px) and theme classes directly from SCSS maps or CSS files.
 
 ## [0.1.0] — 2026-05-23
 

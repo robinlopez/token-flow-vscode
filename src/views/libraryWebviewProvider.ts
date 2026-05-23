@@ -264,6 +264,23 @@ function skeletonHtml(): string {
   </button>
   <div class="library-header__row">
     <input id="library-search" type="search" placeholder="Search by name or value (multi-term)…" autocomplete="off">
+    <button id="library-view-mode-btn" class="view-mode-btn" type="button" title="Switch to Visual mode">
+      <!-- icon-list: shown when we ARE in visual mode (click to go back to list) -->
+      <span class="icon-list" hidden aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor">
+          <rect x="2" y="3" width="3" height="2" rx="0.5"/><rect x="7" y="3" width="7" height="2" rx="0.5"/>
+          <rect x="2" y="7" width="3" height="2" rx="0.5"/><rect x="7" y="7" width="7" height="2" rx="0.5"/>
+          <rect x="2" y="11" width="3" height="2" rx="0.5"/><rect x="7" y="11" width="7" height="2" rx="0.5"/>
+        </svg>
+      </span>
+      <!-- icon-visual: shown when we ARE in list mode (click to go to visual) -->
+      <span class="icon-visual" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor">
+          <rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/>
+          <rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>
+        </svg>
+      </span>
+    </button>
     <div class="filter-wrap">
       <button id="library-filter-btn" class="filter-btn" type="button" title="Filter by kind / category" aria-haspopup="true" aria-expanded="false">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M2 3h12l-4.5 5.5V13l-3-1.5V8.5z"/></svg>
@@ -293,6 +310,7 @@ function skeletonHtml(): string {
       </div>
     </div>
   </div>
+
 </header>
 <main id="library-body">
   <p class="library-empty">Scanning…</p>

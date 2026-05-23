@@ -5,6 +5,9 @@
 - **DynamicCssVarIndex**: Token Flow now globally indexes contextual CSS variables across your entire workspace, including `CSS`, `SCSS`, `Vue`, `React`, and `Angular` styles.
 - **Show Contextual Variable References (`Ctrl+T` / `Alt+T`)**: Triggering "Show Alternatives" on a known contextual variable opens a QuickPick listing all its declarations and usages across the project (sorted by static vs runtime).
 - **Broken Reference Tolerance**: Contextual CSS variables that exist in the project are no longer flagged as broken references by the analyser.
+- **Library Visual Mode**: A stunning new visual presentation for your design system tokens. Toggle between the traditional List view and the new Visual mode to see rich color palettes on checkerboard backgrounds, visual scale bars for metrics (spacing, radius), and numerical sorting.
+- **Enhanced Variant Selection**: Easily switch between themes (light/dark) or viewports directly within each category accordion. The selected variant instantly updates the preview values in both List and Visual modes.
+- **Robust Condition Parsing**: Flawless extraction of variants (`min-width`, breakpoints, theme classes) directly from complex SCSS maps and CSS media queries.
 
 ---
 

@@ -45,6 +45,8 @@ const vscode = acquireVsCodeApi();
 interface PersistedState {
   readonly collapsedCategories: readonly string[];
   readonly subfamilyGrouping: boolean;
+  readonly viewMode: "list" | "visual";
+  readonly visualCategoryVariants: Record<string, string | null>;
 }
 
 function readPersisted(): PersistedState {
@@ -54,6 +56,8 @@ function readPersisted(): PersistedState {
       ? raw!.collapsedCategories.filter((s): s is string => typeof s === "string")
       : [],
     subfamilyGrouping: !!raw?.subfamilyGrouping,
+    viewMode: raw?.viewMode === "visual" ? "visual" : "list",
+    visualCategoryVariants: raw?.visualCategoryVariants ?? {},
   };
 }
 
@@ -61,6 +65,8 @@ function persist(): void {
   vscode.setState<PersistedState>({
     collapsedCategories: [...state.collapsedCategories],
     subfamilyGrouping: state.subfamilyGrouping,
+    viewMode: state.viewMode,
+    visualCategoryVariants: state.visualCategoryVariants,
   });
 }
 
@@ -78,6 +84,8 @@ interface State {
    *  under family + sub-family headers (algorithm port of the
    *  IntelliJ `detectSubfamilies`). */
   subfamilyGrouping: boolean;
+  viewMode: "list" | "visual";
+  visualCategoryVariants: Record<string, string | null>;
 }
 
 interface ScopeSnapshot {
@@ -95,6 +103,8 @@ const state: State = {
   scope: null,
   collapsedCategories: new Set(initialPersisted.collapsedCategories),
   subfamilyGrouping: initialPersisted.subfamilyGrouping,
+  viewMode: initialPersisted.viewMode,
+  visualCategoryVariants: initialPersisted.visualCategoryVariants,
 };
 
 // Display ordering — most-used categories first. New IntelliJ-parity
@@ -169,8 +179,41 @@ document.addEventListener("DOMContentLoaded", () => {
   wireScopeStrip();
   wireFilterDropdown();
   wireSubfamilyToggle();
+  wireViewModeToggle();
+  wireContextMenu();
   vscode.postMessage({ type: "ready" });
 });
+
+function wireViewModeToggle(): void {
+  const btn = document.getElementById("library-view-mode-btn") as HTMLButtonElement;
+  const iconList = btn.querySelector(".icon-list") as HTMLElement;
+  const iconVisual = btn.querySelector(".icon-visual") as HTMLElement;
+
+  const updateUI = () => {
+    // Show the icon for the OTHER mode (what clicking will switch TO).
+    // In visual mode → show list icon ("switch to list")
+    // In list mode   → show visual icon ("switch to visual")
+    if (state.viewMode === "visual") {
+      iconList.hidden = false;   // show "go to list" icon
+      iconVisual.hidden = true;
+      btn.title = "Switch to List view";
+    } else {
+      iconList.hidden = true;
+      iconVisual.hidden = false; // show "go to visual" icon
+      btn.title = "Switch to Visual mode";
+    }
+  };
+
+  btn.addEventListener("click", () => {
+    state.viewMode = state.viewMode === "list" ? "visual" : "list";
+    persist();
+    updateUI();
+    renderBody();
+  });
+
+  updateUI();
+}
+
 
 function wireSubfamilyToggle(): void {
   const cb = document.getElementById(
@@ -384,6 +427,11 @@ function renderBody(): void {
     return;
   }
 
+  if (state.viewMode === "visual") {
+    renderVisualBody(filtered, body);
+    return;
+  }
+
   // Group by category for stable visual chunks. Alphabetical within.
   const byCategory = new Map<TokenCategory, WireToken[]>();
   for (const t of filtered) {
@@ -401,7 +449,7 @@ function renderBody(): void {
     section.dataset.category = cat;
     const collapsed = state.collapsedCategories.has(cat);
     section.dataset.collapsed = collapsed ? "true" : "false";
-    section.appendChild(buildCategoryHeader(cat, list.length, section));
+    section.appendChild(buildCategoryHeader(cat, list.length, section, list));
 
     // When grouping is on, try to split the category into hierarchical
     // buckets. `detectSubfamilies` returns null when grouping wouldn't
@@ -424,6 +472,7 @@ function buildCategoryHeader(
   cat: TokenCategory,
   count: number,
   section: HTMLElement,
+  tokens?: readonly WireToken[],
 ): HTMLElement {
   const h = document.createElement("h3");
   h.className = "category__header";
@@ -436,7 +485,7 @@ function buildCategoryHeader(
 
   const chevron = document.createElement("span");
   chevron.className = "category__chevron";
-  chevron.textContent = "▾";
+  chevron.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M7.976 10.072l4.357-4.357.62.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"/></svg>`;
   chevron.setAttribute("aria-hidden", "true");
 
   const title = document.createElement("span");
@@ -445,7 +494,7 @@ function buildCategoryHeader(
 
   const counter = document.createElement("span");
   counter.className = "category__count";
-  counter.textContent = `· ${count}`;
+  counter.textContent = `${count}`;
 
   h.append(chevron, title, counter);
 
@@ -461,9 +510,59 @@ function buildCategoryHeader(
   h.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" || ev.key === " ") {
       ev.preventDefault();
-      toggle();
+      if (ev.target === h) toggle();
     }
   });
+
+  if (tokens) {
+    // Collect unique sub-labels, ignoring "default" (that's what the
+    // placeholder option already represents) and deduplicating across all
+    // tokens in this category.
+    const subSet = new Set<string>();
+    for (const t of tokens) {
+      for (const c of t.variantColumns) {
+        const label = c.sub && c.sub !== "default" ? c.sub : null;
+        if (label) subSet.add(label);
+      }
+    }
+
+    if (subSet.size > 0) {
+      const select = document.createElement("select");
+      select.className = "category__variant-select";
+      select.title = `Switch variant for ${prettyCategory(cat)}`;
+      select.innerHTML = '<option value="">Default</option>';
+      const current = state.visualCategoryVariants[cat];
+
+      // Stable ordering: put light/dark first, then ≥ breakpoints ascending,
+      // then everything else alphabetically.
+      const sorted = Array.from(subSet).sort((a, b) => {
+        const order = (s: string) =>
+          s === "light" ? 0 : s === "dark" ? 1 : s === "auto" ? 2 :
+          /^[≥<]/.test(s) ? 10 + parseInt(s.replace(/[^0-9]/g, "") || "0", 10) / 1e6 : 5;
+        const diff = order(a) - order(b);
+        return diff !== 0 ? diff : a.localeCompare(b);
+      });
+
+      for (const v of sorted) {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = v;
+        if (v === current) opt.selected = true;
+        select.appendChild(opt);
+      }
+
+      select.addEventListener("click", (ev) => ev.stopPropagation());
+      select.addEventListener("change", (ev) => {
+        ev.stopPropagation();
+        state.visualCategoryVariants[cat] = select.value || null;
+        persist();
+        renderBody();
+      });
+
+      h.appendChild(select);
+    }
+  }
+
   return h;
 }
 
@@ -661,12 +760,14 @@ function buildTokenRow(token: WireToken): HTMLElement {
     ev.dataTransfer.setData("text/plain", token.insertText);
   });
 
+  const { value: resolvedVal, hex: resolvedHex } = resolveVisualValue(token);
+
   // Swatch — colored disk if we have a hex, category glyph otherwise.
   const swatch = document.createElement("span");
   swatch.className = "token__swatch";
-  if (token.hex) {
+  if (resolvedHex) {
     swatch.classList.add("token__swatch--color");
-    swatch.style.backgroundColor = token.hex;
+    swatch.style.backgroundColor = resolvedHex;
   } else {
     swatch.classList.add("token__swatch--glyph");
     swatch.textContent = CATEGORY_GLYPHS[token.category] ?? "·";
@@ -678,10 +779,10 @@ function buildTokenRow(token: WireToken): HTMLElement {
   const name = document.createElement("span");
   name.className = "token__name";
   name.textContent = token.name;
-  const value = document.createElement("span");
-  value.className = "token__value";
-  value.textContent = token.resolvedValue;
-  body.append(name, value);
+  const valueEl = document.createElement("span");
+  valueEl.className = "token__value";
+  valueEl.textContent = resolvedVal;
+  body.append(name, valueEl);
 
   // Trailing actions: variant badge → popover, copy, goto.
   const actions = document.createElement("span");
@@ -909,4 +1010,233 @@ const CATEGORY_GLYPHS: Record<TokenCategory, string> = {
 function prettyCategory(c: TokenCategory): string {
   if (c === "Z_INDEX") return "Z-index";
   return c[0] + c.substring(1).toLowerCase();
+}
+
+// ─── Visual Mode ────────────────────────────────────────────────────────
+
+function renderVisualBody(filtered: readonly WireToken[], body: HTMLElement): void {
+  const byCategory = new Map<TokenCategory, WireToken[]>();
+  for (const t of filtered) {
+    const list = byCategory.get(t.category) ?? [];
+    list.push(t);
+    byCategory.set(t.category, list);
+  }
+
+  for (const cat of CATEGORY_ORDER) {
+    const list = byCategory.get(cat);
+    if (!list || list.length === 0) continue;
+    if (cat === "SPACING" || cat === "RADIUS" || cat === "SIZING" || cat === "LAYOUT") {
+      list.sort((a, b) => {
+        const valA = parseFloat(a.resolvedValue);
+        const valB = parseFloat(b.resolvedValue);
+        if (!isNaN(valA) && !isNaN(valB)) return valA - valB;
+        return a.name.localeCompare(b.name);
+      });
+    } else {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    const section = document.createElement("section");
+    section.className = "category category--visual";
+    section.dataset.category = cat;
+    const collapsed = state.collapsedCategories.has(cat);
+    section.dataset.collapsed = collapsed ? "true" : "false";
+    section.appendChild(buildCategoryHeader(cat, list.length, section, list));
+
+    const buckets = state.subfamilyGrouping ? detectSubfamilies(list) : null;
+    if (!buckets) {
+      const grid = document.createElement("div");
+      grid.className = "visual-grid";
+      for (const tok of list) grid.appendChild(buildVisualToken(tok));
+      section.appendChild(grid);
+    } else {
+      let lastFamily: string | null | undefined = undefined;
+      for (const bucket of buckets) {
+        if (bucket.familyKey !== lastFamily) {
+          if (bucket.familyLabel !== null) {
+            const fh = document.createElement("h4");
+            fh.className = "family-header";
+            fh.textContent = bucket.familyLabel;
+            section.appendChild(fh);
+          }
+          lastFamily = bucket.familyKey;
+        }
+        if (bucket.subfamilyLabel !== null) {
+          const sh = document.createElement("h5");
+          sh.className = "subfamily-header";
+          sh.textContent = bucket.subfamilyLabel;
+          section.appendChild(sh);
+        }
+        const grid = document.createElement("div");
+        grid.className = "visual-grid";
+        for (const tok of bucket.tokens) grid.appendChild(buildVisualToken(tok));
+        section.appendChild(grid);
+      }
+    }
+    body.appendChild(section);
+  }
+}
+
+function resolveVisualValue(token: WireToken): { value: string; hex: string | null } {
+  let value = token.resolvedValue;
+  let hex = token.hex;
+
+  if (token.variantColumns && token.variantColumns.length > 0) {
+    const cols = token.variantColumns;
+    const catVariant = state.visualCategoryVariants[token.category]; // a `sub` label or null
+
+    let matched: typeof cols[number] | undefined;
+    if (catVariant) {
+      // Prefer exact sub match; fall back to any column whose sub starts
+      // with the selected value (e.g. "light" matches "light-high").
+      matched = cols.find(c => c.sub === catVariant);
+      if (!matched) matched = cols.find(c => c.sub.startsWith(catVariant));
+    }
+    // "Default" → use the column whose sub is "default" (primary condition),
+    // otherwise the very first column.
+    if (!matched) matched = cols.find(c => c.sub === "default") ?? cols[0];
+
+    if (matched) {
+      value = matched.value;
+      if (matched.hex) hex = matched.hex;
+    }
+  }
+  return { value, hex };
+}
+
+function buildVisualToken(token: WireToken): HTMLElement {
+  const card = document.createElement("div");
+  card.className = `visual-card visual-card--${token.category.toLowerCase()}`;
+  card.dataset.name = token.name;
+  card.draggable = true;
+  card.title = token.name;
+  
+  card.addEventListener("dragstart", (ev) => {
+    if (!ev.dataTransfer) return;
+    ev.dataTransfer.effectAllowed = "copy";
+    ev.dataTransfer.setData("text/plain", token.insertText);
+  });
+  card.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    showContextMenu(ev.clientX, ev.clientY, token);
+  });
+
+  const { value, hex } = resolveVisualValue(token);
+
+  const preview = document.createElement("div");
+  preview.className = "visual-card__preview";
+  
+  if (token.category === "COLOR" && hex) {
+    const swatch = document.createElement("div");
+    swatch.className = "visual-color-swatch";
+    swatch.style.backgroundColor = hex;
+    preview.appendChild(swatch);
+  } else if (token.category === "SPACING") {
+    const bar = document.createElement("div");
+    bar.className = "visual-spacing-bar";
+    bar.style.width = value.includes('px') || value.includes('rem') ? value : '10px';
+    preview.appendChild(bar);
+  } else if (token.category === "RADIUS") {
+    const box = document.createElement("div");
+    box.className = "visual-radius-box";
+    box.style.borderRadius = value.includes('px') || value.includes('rem') || value.includes('%') ? value : '0px';
+    preview.appendChild(box);
+  } else if (token.category === "SHADOW") {
+    const box = document.createElement("div");
+    box.className = "visual-shadow-box";
+    box.style.boxShadow = value;
+    preview.appendChild(box);
+  } else {
+    const fallback = document.createElement("div");
+    fallback.className = "visual-fallback";
+    fallback.textContent = CATEGORY_GLYPHS[token.category] ?? "·";
+    preview.appendChild(fallback);
+  }
+
+  const label = document.createElement("div");
+  label.className = "visual-card__label";
+  
+  const nameEl = document.createElement("div");
+  nameEl.className = "visual-card__name";
+  // Attempt to simplify the name visually
+  const parts = token.name.replace(/^--/, "").replace(/^\$/, "").split(/[-_]/);
+  nameEl.textContent = parts.slice(-2).join("-"); 
+  
+  const valEl = document.createElement("div");
+  valEl.className = "visual-card__value";
+  valEl.textContent = value.length > 12 ? value.substring(0, 11) + "…" : value;
+  
+  label.appendChild(nameEl);
+  label.appendChild(valEl);
+
+  card.appendChild(preview);
+  card.appendChild(label);
+  return card;
+}
+
+let contextMenuEl: HTMLElement | null = null;
+
+function wireContextMenu(): void {
+  document.addEventListener("click", (ev) => {
+    if (contextMenuEl && !contextMenuEl.contains(ev.target as Node)) {
+      hideContextMenu();
+    }
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") hideContextMenu();
+  });
+}
+
+function hideContextMenu(): void {
+  if (contextMenuEl) {
+    contextMenuEl.remove();
+    contextMenuEl = null;
+  }
+}
+
+function showContextMenu(x: number, y: number, token: WireToken): void {
+  hideContextMenu();
+  
+  contextMenuEl = document.createElement("div");
+  contextMenuEl.className = "visual-context-menu";
+  
+  const copyToken = document.createElement("button");
+  copyToken.className = "context-menu-item";
+  copyToken.innerHTML = `<span class="icon">⎘</span> Copy token`;
+  copyToken.addEventListener("click", () => {
+    vscode.postMessage({ type: "copyToken", name: token.name });
+    hideContextMenu();
+  });
+
+  const { value } = resolveVisualValue(token);
+  const copyValue = document.createElement("button");
+  copyValue.className = "context-menu-item";
+  copyValue.innerHTML = `<span class="icon">📋</span> Copy value`;
+  copyValue.addEventListener("click", () => {
+    navigator.clipboard.writeText(value).catch(() => {});
+    hideContextMenu();
+  });
+
+  const gotoToken = document.createElement("button");
+  gotoToken.className = "context-menu-item";
+  gotoToken.innerHTML = `<span class="icon">↗</span> Go to token`;
+  gotoToken.addEventListener("click", () => {
+    vscode.postMessage({ type: "revealToken", name: token.name });
+    hideContextMenu();
+  });
+
+  contextMenuEl.appendChild(copyToken);
+  contextMenuEl.appendChild(copyValue);
+  contextMenuEl.appendChild(gotoToken);
+
+  document.body.appendChild(contextMenuEl);
+
+  const rect = contextMenuEl.getBoundingClientRect();
+  let left = x;
+  let top = y;
+  if (left + rect.width > window.innerWidth) left = window.innerWidth - rect.width - 4;
+  if (top + rect.height > window.innerHeight) top = window.innerHeight - rect.height - 4;
+  
+  contextMenuEl.style.left = `${left}px`;
+  contextMenuEl.style.top = `${top}px`;
 }

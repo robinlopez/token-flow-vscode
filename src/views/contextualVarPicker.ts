@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
-import { DynamicCssVarIndex, CssVarOccurrence } from "../scanner/dynamicCssVarIndex";
-import * as path from "path";
+import { DynamicCssVarIndex } from "../scanner/dynamicCssVarIndex";
 
 export async function showContextualVarPicker(
   varName: string,
@@ -50,7 +49,6 @@ export async function showContextualVarPicker(
   if (pick) {
     const doc = await vscode.workspace.openTextDocument(pick.occurrence.filePath);
     const editor = await vscode.window.showTextDocument(doc);
-    const pos = new vscode.Position(pick.occurrence.line - 1, 0); // lines are 1-indexed in the occurrence, 0-indexed in Position
     
     // Try to find the exact offset or column if possible. The offset in occurrence is absolute string offset.
     const exactPos = doc.positionAt(pick.occurrence.offset);

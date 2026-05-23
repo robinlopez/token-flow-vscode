@@ -57,51 +57,87 @@ export function collectColumns(token: DesignToken): Col[] {
   return cols;
 }
 
-/** Direct port of `VariantTableHtml.parseCondition` — see SHARED_LOGIC.md §6. */
+/** Direct port of `VariantTableHtml.parseCondition` — see SHARED_LOGIC.md §6.
+ *  Rewritten to be robust against CSS comments, garbage strings, SCSS maps,
+ *  media queries (min/max-width), class selectors, data-attributes, etc.
+ */
 export function parseCondition(condition: string): {
   theme: string | null;
   sub: string;
 } {
-  const s = condition.trim();
-  if (!s || s.toLowerCase() === "(top level)") {
+  // ── Strip CSS/SCSS comments before any analysis ───────────────────────
+  const stripped = condition
+    .replace(/\/\*[\s\S]*?\*\//g, "")   // /* block comment */
+    .replace(/\/\/[^\n]*/g, "")          // // line comment
+    .trim();
+
+  if (!stripped || stripped.toLowerCase() === "(top level)") {
     return { theme: null, sub: "default" };
   }
 
-  const minW = /min-width\s*:\s*(\d+)\s*px/.exec(s);
-  if (minW) return { theme: null, sub: `≥${minW[1]}` };
-  const maxW = /max-width\s*:\s*(\d+)\s*px/.exec(s);
-  if (maxW) {
-    const n = parseInt(maxW[1], 10);
-    if (!isNaN(n)) return { theme: null, sub: `<${n + 1}` };
+  // ── Media queries: min-width → "≥Npx" ────────────────────────────────
+  const minW = /min-width\s*:\s*(\d+(?:\.\d+)?)\s*(px|rem|em)/i.exec(stripped);
+  if (minW) return { theme: null, sub: `\u2265${minW[1]}${minW[2]}` };
+
+  // ── Media queries: max-width → "<Npx" ────────────────────────────────
+  const maxW = /max-width\s*:\s*(\d+(?:\.\d+)?)\s*(px|rem|em)/i.exec(stripped);
+  if (maxW) return { theme: null, sub: `<${maxW[1]}${maxW[2]}` };
+
+  // ── Named viewport breakpoints ────────────────────────────────────────
+  const vp = /\b(mobile|tablet|desktop|sm|md|lg|xl|xxl|2xl)\b/i.exec(stripped);
+  if (vp && !/[{};*]/.test(stripped)) {
+    return { theme: null, sub: vp[1].toLowerCase() };
   }
 
-  if (/^[\w\- ]+$/.test(s)) {
-    const parts = s.split(" ").filter((p) => p.length > 0);
-    const isMode = (w: string) => {
-      const l = w.toLowerCase();
-      return l === "light" || l === "dark" || l === "auto";
-    };
+  const isMode = (w: string) => /^(light|dark|auto)$/i.test(w);
+
+  // ── Simple word-only condition (SCSS map key, class name without dots) ─
+  if (/^[\w\- ]+$/.test(stripped)) {
+    const parts = stripped.split(/[\s\-_]+/).filter((p) => p.length > 0 && /^[a-zA-Z0-9]+$/.test(p));
     const modeWord = parts.find(isMode);
     const themeWord = parts.find(
-      (p) => !isMode(p) && p.toLowerCase() !== "default",
+      (p) => !isMode(p) && p.toLowerCase() !== "default" && p.length > 1,
     );
     if (themeWord && modeWord) return { theme: themeWord, sub: modeWord.toLowerCase() };
     if (modeWord) return { theme: null, sub: modeWord.toLowerCase() };
     if (themeWord) return { theme: themeWord, sub: "default" };
-    return { theme: null, sub: parts[parts.length - 1]?.substring(0, 24) ?? "default" };
+    // If all parts are "default" or single char, return "default"
+    const last = parts[parts.length - 1];
+    if (last && last.length > 1) return { theme: null, sub: last.substring(0, 24) };
+    return { theme: null, sub: "default" };
   }
 
-  const dl = /(?:^|[^A-Za-z0-9_-])(dark[\w-]*|light[\w-]*)(?:[^A-Za-z0-9_-]|$)/i.exec(s);
+  // ── Light / dark patterns anywhere in the string ─────────────────────
+  const dl = /(?:^|[^A-Za-z0-9_-])(dark(?:[\w-]*)?|light(?:[\w-]*)?)(?:[^A-Za-z0-9_-]|$)/i.exec(stripped);
   if (dl) return { theme: null, sub: dl[1].toLowerCase() };
 
-  const cleaned = s
-    .replace(/:root/g, "")
+  // ── CSS class selectors (".theme-dark", ".dark-mode") ────────────────
+  const classMatch = /\.([a-zA-Z][a-zA-Z0-9\-_]{2,})/g;
+  let m;
+  while ((m = classMatch.exec(stripped)) !== null) {
+    const name = m[1];
+    if (isMode(name)) return { theme: null, sub: name.toLowerCase() };
+    if (/dark|light|mode|theme/i.test(name)) return { theme: null, sub: name.substring(0, 24) };
+  }
+
+  // ── data-theme / data-mode attributes ────────────────────────────────
+  const attrMatch = /\[data-(?:theme|mode|color-scheme)[=*~|^$]?['"]?([a-zA-Z][a-zA-Z0-9\-_]*)/i.exec(stripped);
+  if (attrMatch) {
+    const val = attrMatch[1];
+    if (isMode(val)) return { theme: null, sub: val.toLowerCase() };
+    return { theme: val, sub: "default" };
+  }
+
+  // ── Fallback: aggressive clean — never expose comments or garbage ─────
+  const cleaned = stripped
+    .replace(/:root\b/g, "")
     .replace(/@media\s*/g, "")
-    .trim()
-    .replace(/^[()]+|[()]+$/g, "")
-    .trim()
-    .replace(/^[.:&\s]+/, "");
-  return { theme: null, sub: (cleaned || "default").substring(0, 24) };
+    .replace(/[^a-zA-Z0-9\-_\u2265<>.\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned.length < 2) return { theme: null, sub: "default" };
+  return { theme: null, sub: cleaned.substring(0, 24).trimEnd() };
 }
 
 // ─── Rendering ───────────────────────────────────────────────────────────
