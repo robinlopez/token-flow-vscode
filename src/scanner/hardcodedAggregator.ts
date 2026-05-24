@@ -28,6 +28,11 @@ import {
 } from "../webview/shared/protocol";
 import { isFileExcluded, readScopes } from "../settings/scopes";
 import { isTokenRelevantLanguage } from "../services/activeScopeTracker";
+import {
+  getExpectedRoleForProperty,
+  sortCandidates,
+  ScoreContext,
+} from "../model/semantics";
 
 const GLOB = "**/*.{scss,sass,css,less,ts,tsx,js,jsx,mjs,cjs,json}";
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -77,12 +82,17 @@ export async function aggregateHardcodedInDocument(
     const exact = index
       .lookupAcross(hit.text, KIND_TO_CATEGORIES[hit.kind])
       .filter((t) => activeScopeNames.has(t.scope) && !t.external);
-    // Synthetic `spacing(N)` calls — only filter on scope+external,
-    // not on the value index (the helper itself is the indexed token,
-    // its call expression is generated on the fly).
     const helperCalls = helperSuggestionsFor(hit.text, hit.kind, allTokens)
       .filter((t) => activeScopeNames.has(t.scope) && !t.external);
-    const matches = [...exact, ...helperCalls];
+    // Sort exact matches semantically before concatenating helpers.
+    const expectedRole = hit.cssProperty
+      ? getExpectedRoleForProperty(hit.cssProperty)
+      : null;
+    const ctx: ScoreContext = {
+      expectedCategory: KIND_TO_CATEGORIES[hit.kind][0],
+      expectedRole,
+    };
+    const matches = [...sortCandidates(exact, ctx), ...helperCalls];
     if (matches.length === 0) continue;
     out.push({
       relPath,
@@ -159,7 +169,16 @@ export async function aggregateHardcodedAcrossWorkspace(
           .filter((t) => !t.external);
         const helperCalls = helperSuggestionsFor(hit.text, hit.kind, allTokens)
           .filter((t) => !t.external);
-        const candidates = [...exact, ...helperCalls];
+        // Sort semantically even in workspace mode so the representative
+        // candidate (candidates[0]) is always the most meaningful token.
+        const expectedRole = hit.cssProperty
+          ? getExpectedRoleForProperty(hit.cssProperty)
+          : null;
+        const ctx: ScoreContext = {
+          expectedCategory: KIND_TO_CATEGORIES[hit.kind][0],
+          expectedRole,
+        };
+        const candidates = [...sortCandidates(exact, ctx), ...helperCalls];
         if (candidates.length === 0) continue;
         matches.push({
           relPath,

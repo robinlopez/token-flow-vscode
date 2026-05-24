@@ -1,5 +1,11 @@
 # Token Flow — Release Notes
 
+## v0.1.2 — 2026-05-24 · Semantic Scoring Engine
+
+- **Multi-criteria Semantic Scoring**: The suggestion engine now natively understands your CSS property context (e.g. `background-color`, `padding`). It ranks design token candidates based on structural **Tiers** (Semantic vs Component vs Primitive) and semantic **Roles** (Surface, Content, Stroke, Effect).
+- **Intelligent Contextual Suggestions**: For a hardcoded `32px` value in a `padding` rule, the engine will prioritize `--spacing-xl` over `--units-xl`. For `#005bff` in a `background`, a token like `--color-surface-high` will easily outrank a `--color-text-brand` token, delivering exactly the right token for the context.
+
+---
 ## v0.1.1 — 2026-05-23 · Contextual Variables Integration
 
 - **DynamicCssVarIndex**: Token Flow now globally indexes contextual CSS variables across your entire workspace, including `CSS`, `SCSS`, `Vue`, `React`, and `Angular` styles.

@@ -2,6 +2,12 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](https://semver.org/).
 
+## [0.1.2] — 2026-05-24
+
+### Added
+- **Multi-criteria Semantic Scoring** — The suggestion engine now ranks candidates based on structural Tiers (Semantic > Component > Primitive) and semantic Roles (Surface, Content, Stroke, Effect) inferred from the surrounding CSS property context, rather than falling back to naive name-length sorting.
+
+
 ## [0.1.1] — 2026-05-23
 
 ### Added

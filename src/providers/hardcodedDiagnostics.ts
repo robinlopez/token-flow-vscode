@@ -20,6 +20,11 @@ import { findLiterals, Hit, LiteralKind } from "../scanner/literalFinder";
 import { DesignToken, TokenCategory } from "../model/designToken";
 import { ActiveScopeTracker } from "../services/activeScopeTracker";
 import { isFileExcluded, readScopes } from "../settings/scopes";
+import {
+  getExpectedRoleForProperty,
+  sortCandidates,
+  ScoreContext,
+} from "../model/semantics";
 
 const SUPPORTED_LANGUAGES = ["scss", "sass", "css", "less"] as const;
 
@@ -114,10 +119,22 @@ export class HardcodedDiagnostics implements vscode.Disposable {
 
     const diagnostics: vscode.Diagnostic[] = [];
     for (const hit of hits) {
-      const matches = index
+      const rawMatches = index
         .lookupAcross(hit.text, KIND_TO_CATEGORIES[hit.kind])
         .filter((t) => active.has(t.scope) && !t.external);
-      if (matches.length === 0) continue;
+      if (rawMatches.length === 0) continue;
+
+      // Sort candidates using the multi-criteria semantic scorer so that
+      // the best suggestion is always shown first in the ampoule / underline.
+      const expectedRole = hit.cssProperty
+        ? getExpectedRoleForProperty(hit.cssProperty)
+        : null;
+      const ctx: ScoreContext = {
+        expectedCategory: KIND_TO_CATEGORIES[hit.kind][0],
+        expectedRole,
+      };
+      const matches = sortCandidates(rawMatches, ctx);
+
       diagnostics.push(buildDiagnostic(doc, hit, matches));
     }
     this.collection.set(doc.uri, diagnostics);

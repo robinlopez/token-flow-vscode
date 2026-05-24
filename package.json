@@ -2,7 +2,7 @@
   "name": "token-flow-vscode",
   "displayName": "Token Flow - Design System",
   "description": "Bridging the gap between Design and Code. Find, insert, swap and audit design tokens (SCSS · CSS · TS/JS) without leaving your editor.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "robin-lopez",
   "license": "MIT",
   "icon": "media/pluginIcon.png",
