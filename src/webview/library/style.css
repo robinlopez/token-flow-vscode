@@ -486,7 +486,10 @@ body {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   line-height: 1.25;
 }
 
@@ -506,6 +509,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
+  text-align: right;
 }
 
 /* ─── Trailing actions (badge + copy + goto) ─────────────────────── */
