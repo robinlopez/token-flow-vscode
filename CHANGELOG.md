@@ -6,6 +6,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](
 
 ### Added
 - **Multi-criteria Semantic Scoring** — The suggestion engine now ranks candidates based on structural Tiers (Semantic > Component > Primitive) and semantic Roles (Surface, Content, Stroke, Effect) inferred from the surrounding CSS property context, rather than falling back to naive name-length sorting.
+- **Suggestion engine parity with IntelliJ** — `SuggestionEngine.kt` (Kotlin) is now the authoritative spec per `SHARED_LOGIC.md` and the VSCode side is a faithful port:
+  - **Unified `findSuggestions()` entry point** — single function called by `HardcodedDiagnostics`, the Hardcoded panel aggregator, and the Analyser workspace aggregator. Replaces the previous three-call combo (`lookupAcross` + `sortCandidates` + manual helper concat) that had drifted between callers.
+  - **Cross-family demotion (+200)** — a TYPOGRAPHY-categorised token can no longer outrank a SPACING token on a `padding: 12px` declaration when no exact SPACING match exists. Wrong-family hits surface only as last-resort fuzzy hints.
+  - **Typography-name guard** — a token literally named `--size-typography-title-md` no longer surfaces on `width: 20px` even if its declared category is SIZING. Word-boundary regex (`typography|font|text|weight|leading|…`) catches the canonical pitfall.
+  - **Color-distance fallback** — when no exact COLOR match exists, tokens within RGBA Δ ≤ 0.05 are now surfaced, sorted by colour proximity primary and semantic score secondary. Previously diagnostics simply showed no suggestion at all.
+  - **Role markers aligned to IntelliJ** — added `canvas` (SURFACE), `label` (CONTENT), `divider` (STROKE), `focus` / `glow` (EFFECT). Removed `ring`, `blur`, `filter`, `overlay` markers that had no Kotlin counterpart.
+  - **Tier prefix list aligned** — added `unit` (singular), `primitives` (plural), `component`, `components` to match Kotlin segment list.
+  - **JS-object-path tokens classified correctly** — tier extraction now splits on both `-` and `.`, so a `primitive.units.xl` JS token is recognised as PRIMITIVE rather than silently falling through to SEMANTIC.
+  - **Bug fix — SCSS sigil stripping** — the previous `/^(--|\$)/` regex had an escaping bug (`\$` interpreted as a literal backslash) so `$units-xl` was never normalised. Tier and role extraction silently mis-scored every SCSS token.
 
 ### Performance & Stability
 - **In-flight scan dedup** — concurrent callers (multiple visible editors firing diagnostics in parallel after an invalidation) now await a SINGLE shared scan instead of triggering N redundant workspace passes. Eliminates a known cause of compounded freezes on multi-editor sessions.

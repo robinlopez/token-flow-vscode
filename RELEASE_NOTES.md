@@ -1,9 +1,20 @@
 # Token Flow — Release Notes
 
-## v0.1.2 — 2026-05-24 · Semantic Scoring Engine + Stability Pass
+## v0.1.2 — 2026-05-24 · Semantic Scoring Engine + Stability Pass + IntelliJ Parity
 
 - **Multi-criteria Semantic Scoring**: The suggestion engine now natively understands your CSS property context (e.g. `background-color`, `padding`). It ranks design token candidates based on structural **Tiers** (Semantic vs Component vs Primitive) and semantic **Roles** (Surface, Content, Stroke, Effect).
 - **Intelligent Contextual Suggestions**: For a hardcoded `32px` value in a `padding` rule, the engine will prioritize `--spacing-xl` over `--units-xl`. For `#005bff` in a `background`, a token like `--color-surface-high` will easily outrank a `--color-text-brand` token, delivering exactly the right token for the context.
+
+### Suggestion Engine — full parity with IntelliJ
+
+The VSCode suggestion engine is now a faithful port of `SuggestionEngine.kt`. Every behaviour the IntelliJ users rely on is now available on VSCode:
+
+- **Cross-family demotion**: a TYPOGRAPHY token will never outrank a SPACING token on `padding`, even when the spacing scale doesn't contain that value.
+- **Typography-name guard**: tokens literally named `--size-typography-…` won't surface on `width: …` declarations even if their declared category is SIZING.
+- **Colour-distance fallback**: when no exact colour match exists, near-match tokens (RGBA Δ ≤ 0.05) are now suggested — sorted by colour proximity first, semantic score second. Previously the diagnostic stayed silent.
+- **Helper-aware suggestions (`spacing(1.5)`, `radius(2)`)**: synthetic helper-call candidates are composed and ranked alongside direct matches everywhere — diagnostics, hardcoded panel, and Analyser dashboard.
+- **SCSS variable scoring fix**: a regex bug meant `$`-prefixed SCSS variables were never normalised, so their tier and role extraction silently mis-scored. SCSS tokens now rank consistently with their CSS-custom-property siblings.
+- **JS-object-path tokens**: `primitive.units.xl`-style tokens are now correctly classified as PRIMITIVE instead of falling through to SEMANTIC.
 
 ### Performance & Stability — End of "98% CPU freezes"
 

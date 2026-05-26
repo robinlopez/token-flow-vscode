@@ -1,30 +1,29 @@
 // ─── Token Semantics ────────────────────────────────────────────────────────
 //
-// Provides multi-criteria scoring for design-token suggestions, replacing the
-// naive name-length tiebreaker with a proper semantic hierarchy:
+// Multi-criteria scoring for design-token suggestions. Direct port of the
+// IntelliJ `SuggestionEngine` (Kotlin) — `SuggestionEngine.kt` is the
+// source of truth per SHARED_LOGIC.md. Any divergence from the Kotlin
+// side must land here in the same PR.
 //
-//   1. Category match   (does the token's category fit the literal kind?)
-//   2. Role match       (does the token's semantic role fit the CSS property?)
-//   3. Tier weight      (Semantic > Component >> Primitive)
-//   4. Exact vs Fuzzy   (small penalty for approximate color matches)
-//   5. Name length      (tiebreaker only — can no longer override tiers)
+// Scoring axes (lower = better):
+//   1. Category match               (-100)
+//   2. Cross-family demotion        (+200)   ← Kotlin parity
+//   3. Role match                   (-80)
+//   4. Role conflict                (+60)
+//   5. Tier weight                  (-30 sem / -10 comp / +40 prim)
+//   6. Exact vs fuzzy/helper        (+5)
+//   7. Name length tiebreaker       (len / 4)
 //
-// Designed to be used by HardcodedDiagnostics, CompletionProvider, and any
-// place that sorts candidate design tokens for a given literal + CSS context.
+// Two name-based filters reject obviously-wrong candidates before they
+// hit the score:
+//   • isFamilyMismatch — categorical (TYPOGRAPHY token on a width property).
+//   • isNameFamilyMismatch — name-based (a token named `--size-typography-…`
+//     is metric by category but semantically belongs to a type ramp).
 
 import { DesignToken, TokenCategory } from "./designToken";
 
 // ─── Token Tiers ─────────────────────────────────────────────────────────────
 
-/**
- * The "level" of a token in the design-token hierarchy.
- *
- * SEMANTIC   — meaningful, context-aware aliases  (spacing-xl, color-surface-default)
- * COMPONENT  — component-scoped aliases           (token-button-background, comp-card-radius)
- * PRIMITIVE  — raw design primitives              (palette-blue-500, units-32)
- *
- * Lower enum value = preferred.
- */
 export const enum TokenTier {
   SEMANTIC = 0,
   COMPONENT = 1,
@@ -32,73 +31,100 @@ export const enum TokenTier {
 }
 
 /**
- * Prefixes that identify PRIMITIVE tokens (raw scale values, not contextual).
- * Everything else is SEMANTIC unless it matches a COMPONENT prefix.
+ * Hyphen-or-dot delimited leading segments that signal a PRIMITIVE token.
+ * Verbatim port of `SuggestionEngine.PRIMITIVE_PREFIXES`.
  */
-const PRIMITIVE_PREFIXES = [
-  "units-",
-  "palette-",
-  "base-",
-  "primitive-",
-  "core-",
-  "scale-",
-  "raw-",
-];
+const PRIMITIVE_HEADS = new Set([
+  "units", "unit", "palette", "base", "primitive", "primitives",
+  "core", "scale", "raw",
+]);
 
-/** Prefixes that identify COMPONENT-scoped tokens. */
-const COMPONENT_PREFIXES = ["token-", "comp-", "c-"];
+/**
+ * Same shape for COMPONENT — `token-` / `token.` is handled separately
+ * (Kotlin: `n.startsWith("token-") || n.startsWith("token.")`) so we
+ * keep that fork below in `extractTier`.
+ */
+const COMPONENT_HEADS = new Set([
+  "comp", "component", "components",
+]);
+
+/**
+ * Strip the sigil that prefixes CSS custom properties (`--`) and SCSS
+ * variables (`$`). The previous regex `/^(--|\\$)/` had an escaping
+ * bug (the literal `\\$` only matches a backslash, not `$`), so SCSS
+ * names like `$units-xl` were never normalised — tier classification
+ * silently mis-scored every SCSS token. Use a string-prefix check to
+ * keep the intent obvious.
+ */
+function normaliseName(name: string): string {
+  let n = name.toLowerCase();
+  if (n.startsWith("--")) n = n.substring(2);
+  else if (n.startsWith("$")) n = n.substring(1);
+  return n;
+}
 
 /** Extract the structural tier of a token from its name. */
 export function extractTier(tokenName: string): TokenTier {
-  // Strip leading `--` or `$` sigil.
-  const name = tokenName.replace(/^(--|\\$)/, "").toLowerCase();
-  for (const p of PRIMITIVE_PREFIXES) {
-    if (name.startsWith(p)) return TokenTier.PRIMITIVE;
-  }
-  for (const p of COMPONENT_PREFIXES) {
-    if (name.startsWith(p)) return TokenTier.COMPONENT;
+  const n = normaliseName(tokenName);
+  // CSS / SCSS use hyphens (`units-xl`); JS object paths use dots
+  // (`primitive.units.xl`). Splitting on both gives the same leading
+  // segment for both flavours so `units.sm` doesn't fall through to
+  // SEMANTIC anymore.
+  const head = n.split(/[-.]/, 1)[0];
+  if (PRIMITIVE_HEADS.has(head)) return TokenTier.PRIMITIVE;
+  if (n.startsWith("token-") || n.startsWith("token.") || COMPONENT_HEADS.has(head)) {
+    return TokenTier.COMPONENT;
   }
   return TokenTier.SEMANTIC;
 }
 
 // ─── Token Roles ─────────────────────────────────────────────────────────────
 
-/**
- * The visual/semantic role expressed by a token's name segments.
- * Used to cross-reference the token against the CSS property it's applied to.
- */
 export const enum TokenRole {
-  SURFACE = "surface",   // backgrounds, fills
-  CONTENT = "content",   // text, icons, foreground
-  STROKE  = "stroke",    // borders, outlines
-  EFFECT  = "effect",    // shadows, filters
+  SURFACE = "surface",
+  CONTENT = "content",
+  STROKE = "stroke",
+  EFFECT = "effect",
 }
 
-/** Ordered segment patterns — first match wins. */
-const ROLE_PATTERNS: Array<{ role: TokenRole; patterns: RegExp }> = [
-  {
-    role: TokenRole.SURFACE,
-    patterns: /(?:^|-)(?:surface|background|bg|fill)(?:-|$)/,
-  },
-  {
-    role: TokenRole.CONTENT,
-    patterns: /(?:^|-)(?:content|text|foreground|fg|icon)(?:-|$)/,
-  },
-  {
-    role: TokenRole.STROKE,
-    patterns: /(?:^|-)(?:stroke|border|outline|ring)(?:-|$)/,
-  },
-  {
-    role: TokenRole.EFFECT,
-    patterns: /(?:^|-)(?:effects?|shadow|blur|filter|overlay)(?:-|$)/,
-  },
-];
+/**
+ * Segment-level role markers. Verbatim port of `SuggestionEngine.roleOf`
+ * — any divergence here means the two plugins ranks differently and
+ * SHARED_LOGIC.md is no longer authoritative.
+ */
+const ROLE_BY_SEGMENT: Record<string, TokenRole> = {
+  // SURFACE
+  surface: TokenRole.SURFACE,
+  background: TokenRole.SURFACE,
+  bg: TokenRole.SURFACE,
+  fill: TokenRole.SURFACE,
+  canvas: TokenRole.SURFACE,
+  // CONTENT
+  content: TokenRole.CONTENT,
+  text: TokenRole.CONTENT,
+  foreground: TokenRole.CONTENT,
+  fg: TokenRole.CONTENT,
+  label: TokenRole.CONTENT,
+  icon: TokenRole.CONTENT,
+  // STROKE
+  stroke: TokenRole.STROKE,
+  border: TokenRole.STROKE,
+  outline: TokenRole.STROKE,
+  divider: TokenRole.STROKE,
+  // EFFECT
+  shadow: TokenRole.EFFECT,
+  focus: TokenRole.EFFECT,
+  effect: TokenRole.EFFECT,
+  effects: TokenRole.EFFECT,
+  glow: TokenRole.EFFECT,
+};
 
 /** Extract the semantic role from a token name, or `null` if undetermined. */
 export function extractRole(tokenName: string): TokenRole | null {
-  const name = tokenName.replace(/^(--|\\$)/, "").toLowerCase();
-  for (const { role, patterns } of ROLE_PATTERNS) {
-    if (patterns.test(name)) return role;
+  const n = normaliseName(tokenName);
+  for (const seg of n.split(/[-.]/)) {
+    const role = ROLE_BY_SEGMENT[seg];
+    if (role !== undefined) return role;
   }
   return null;
 }
@@ -107,13 +133,12 @@ export function extractRole(tokenName: string): TokenRole | null {
 
 /**
  * Maps a CSS property name to the token role we'd expect to see there.
- * Returns `null` when the property has no meaningful role constraint
- * (e.g. `padding`, `font-size` — value type already constrains the category).
+ * VSCode-specific helper — IntelliJ derives this at the inspection call
+ * site. Returning null lets the role axis stay neutral when the
+ * property is not colour-bearing.
  */
 export function getExpectedRoleForProperty(cssProperty: string): TokenRole | null {
   const p = cssProperty.toLowerCase().trim();
-
-  // Surface / fill
   if (
     p === "background" ||
     p === "background-color" ||
@@ -122,8 +147,6 @@ export function getExpectedRoleForProperty(cssProperty: string): TokenRole | nul
   ) {
     return TokenRole.SURFACE;
   }
-
-  // Content / foreground
   if (
     p === "color" ||
     p === "caret-color" ||
@@ -132,8 +155,6 @@ export function getExpectedRoleForProperty(cssProperty: string): TokenRole | nul
   ) {
     return TokenRole.CONTENT;
   }
-
-  // Stroke / border
   if (
     p === "border-color" ||
     p === "border-top-color" ||
@@ -148,35 +169,71 @@ export function getExpectedRoleForProperty(cssProperty: string): TokenRole | nul
   ) {
     return TokenRole.STROKE;
   }
-
-  // Effect / shadow
   if (p === "box-shadow" || p === "text-shadow" || p === "filter" || p === "drop-shadow") {
     return TokenRole.EFFECT;
   }
-
   return null;
+}
+
+// ─── Cross-family rules ─────────────────────────────────────────────────────
+
+/**
+ * Compatible length-bearing categories that can substitute for one another.
+ * Design systems regularly reuse the same scale across spacing, sizing
+ * and small radii. TYPOGRAPHY and BORDER each stand alone outside this
+ * pool — see `isFamilyMismatch`.
+ */
+const METRIC_INTERCHANGEABLE: ReadonlySet<TokenCategory> = new Set<TokenCategory>([
+  "SPACING", "SIZING", "RADIUS",
+]);
+
+/**
+ * Categories whose surrounding property expects a frame/distance value.
+ * When the expected family is one of these, name-based typography
+ * markers in a candidate's name are a hard reject (see
+ * `isNameFamilyMismatch`).
+ */
+const METRIC_FRAME: ReadonlySet<TokenCategory> = new Set<TokenCategory>([
+  "SPACING", "SIZING", "RADIUS", "BORDER", "LAYOUT",
+]);
+
+/**
+ * Hyphen-and-dot delimited segments that strongly signal a typography
+ * ramp. A SIZING-categorised token named `--size-typography-title-md`
+ * is still semantically a font-size; it has no business surfacing on
+ * `width: 20px`.
+ *
+ * Word-boundary lookarounds prevent partial-word collisions (`type`
+ * inside `typography` leaking back).
+ */
+const TYPO_NAME_SEGMENT_RE =
+  /(?<![a-z])(?:typography|font|text|weight|leading|letter|family|tracking|kerning|decoration|title|heading|caption|paragraph)(?![a-z])/;
+
+export function isFamilyMismatch(
+  expected: TokenCategory,
+  actual: TokenCategory,
+): boolean {
+  if (expected === actual) return false;
+  if (METRIC_INTERCHANGEABLE.has(expected) && METRIC_INTERCHANGEABLE.has(actual)) {
+    return false;
+  }
+  return true;
+}
+
+export function isNameFamilyMismatch(
+  expected: TokenCategory,
+  tokenName: string,
+): boolean {
+  if (!METRIC_FRAME.has(expected)) return false;
+  return TYPO_NAME_SEGMENT_RE.test(normaliseName(tokenName));
 }
 
 // ─── Score Context ────────────────────────────────────────────────────────────
 
 export interface ScoreContext {
-  /**
-   * The token category we're primarily looking for (e.g. "SPACING").
-   * When provided, an exact category match awards -100 pts.
-   */
-  expectedCategory?: TokenCategory;
-
-  /**
-   * The semantic role implied by the CSS property (e.g. TokenRole.SURFACE for
-   * `background`). A matching role awards -80 pts; a conflicting role penalises
-   * +60 pts. When `null` or `undefined` the role axis is skipped.
-   */
+  expectedCategory?: TokenCategory | null;
   expectedRole?: TokenRole | null;
-
-  /**
-   * Set to `true` when the value match was approximate (RGB distance > 0 for
-   * colors, unit conversion for lengths). Adds +5 pts.
-   */
+  /** True when the value match was approximate (RGB distance > 0, helper-derived). */
   isFuzzy?: boolean;
 }
 
@@ -184,82 +241,69 @@ export interface ScoreContext {
 
 /**
  * Computes a recommendation score for a candidate `DesignToken`.
- *
- * **Lower score = better suggestion.**
- *
- * The score is deliberately additive so each axis contributes independently
- * and the tiebreaker (name length) can never override a strong tier signal.
- *
- * Scoring table:
- * ┌──────────────────────────────┬─────────────┐
- * │ Factor                       │ Points      │
- * ├──────────────────────────────┼─────────────┤
- * │ Category match               │  -100       │
- * │ Role match (exact)           │   -80       │
- * │ Role conflict (wrong role)   │   +60       │
- * │ Tier: SEMANTIC               │   -30       │
- * │ Tier: COMPONENT              │   -10       │
- * │ Tier: PRIMITIVE              │   +40       │
- * │ Fuzzy match penalty          │    +5       │
- * │ Name length tiebreaker       │ len / 4     │
- * └──────────────────────────────┴─────────────┘
+ * **Lower score = better suggestion.** Mirrors `SuggestionEngine.score`.
  */
 export function scoreCandidate(token: DesignToken, ctx: ScoreContext): number {
-  let score = 0;
+  let n = 0;
 
-  // 1. Category match
+  // 1. Category alignment.
   if (ctx.expectedCategory && token.category === ctx.expectedCategory) {
-    score -= 100;
+    n -= 100;
   }
 
-  // 2. Role match / conflict
+  // 1b. Cross-family demotion. A wrong-family token only surfaces as a
+  //     last-resort fuzzy hint and never beats a strict in-family
+  //     candidate — see Kotlin parity comment.
+  if (
+    ctx.expectedCategory != null &&
+    token.category !== ctx.expectedCategory &&
+    isFamilyMismatch(ctx.expectedCategory, token.category)
+  ) {
+    n += 200;
+  }
+
+  // 2. Role alignment.
   if (ctx.expectedRole != null) {
-    const tokenRole = extractRole(token.name);
-    if (tokenRole === ctx.expectedRole) {
-      score -= 80; // ✓ perfect semantic role match
-    } else if (tokenRole !== null) {
-      score += 60; // ✗ wrong role — strong penalty
-    }
-    // tokenRole === null → role unknown, no bonus/malus
+    const role = extractRole(token.name);
+    if (role === ctx.expectedRole) n -= 80;
+    else if (role !== null) n += 60;
+    // unknown role → neutral
   }
 
-  // 3. Tier weight
+  // 3. Tier weight.
   const tier = extractTier(token.name);
-  if (tier === TokenTier.SEMANTIC) {
-    score -= 30;
-  } else if (tier === TokenTier.COMPONENT) {
-    score -= 10;
-  } else {
-    // PRIMITIVE — deprioritise unless nothing else matches
-    score += 40;
-  }
+  if (tier === TokenTier.SEMANTIC) n -= 30;
+  else if (tier === TokenTier.COMPONENT) n -= 10;
+  else n += 40;
 
-  // 4. Fuzzy match penalty
-  if (ctx.isFuzzy) score += 5;
+  // 4. Fuzzy / helper-derived penalty.
+  if (ctx.isFuzzy) n += 5;
 
-  // 5. Name-length tiebreaker — deliberately tiny weight
-  score += token.name.length / 4;
+  // 5. Name length tiebreaker.
+  n += token.name.length / 4;
 
-  return score;
+  return n;
 }
 
 /**
- * Sort-in-place an array of candidates by their semantic score ascending
- * (lowest score = best suggestion appears first).
+ * Sort candidates by their semantic score ascending (best first).
+ * Pure — returns a new array. Caller is responsible for any post-filter
+ * (e.g. exclude `external` tokens).
  */
 export function sortCandidates(
-  tokens: DesignToken[],
+  tokens: readonly DesignToken[],
   ctx: ScoreContext,
 ): DesignToken[] {
-  return tokens.slice().sort((a, b) => scoreCandidate(a, ctx) - scoreCandidate(b, ctx));
+  return tokens
+    .slice()
+    .sort((a, b) => scoreCandidate(a, ctx) - scoreCandidate(b, ctx));
 }
 
 /**
  * Encodes a numeric score into a fixed-width sort string suitable for
  * `vscode.CompletionItem.sortText` (which uses lexicographic ordering).
- *
- * Scores are clamped to [-999, 999] then shifted to [0, 1998] and zero-padded
- * to 4 chars so the sort is stable and correct across VSCode's string sort.
+ * Scores clamp to [-999, 999] then shift to [0, 1998] and zero-pad to 4
+ * chars so the sort is stable across VSCode's string comparator.
  */
 export function scoreToSortText(score: number): string {
   const shifted = Math.max(0, Math.min(1998, Math.round(score) + 999));

@@ -19,8 +19,8 @@
 import * as vscode from "vscode";
 import { TokenScanner } from "./tokenScanner";
 import { findLiterals, LiteralKind } from "./literalFinder";
-import { helperSuggestionsFor } from "./helperSuggestions";
-import { DesignToken, TokenCategory, tokenExpression } from "../model/designToken";
+import { findSuggestions } from "./findSuggestions";
+import { DesignToken, tokenExpression } from "../model/designToken";
 import { parseColor, rgbaToCacheKey } from "../ui/colorParser";
 import {
   WireHardcodedCandidate,
@@ -28,22 +28,10 @@ import {
 } from "../webview/shared/protocol";
 import { isFileExcluded, readScopes } from "../settings/scopes";
 import { isTokenRelevantLanguage } from "../services/activeScopeTracker";
-import {
-  getExpectedRoleForProperty,
-  sortCandidates,
-  ScoreContext,
-} from "../model/semantics";
+import { getExpectedRoleForProperty } from "../model/semantics";
 
 const GLOB = "**/*.{scss,sass,css,less,ts,tsx,js,jsx,mjs,cjs,json}";
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
-// LENGTH literals (`16px`) should also surface SIZING / BORDER /
-// LAYOUT token candidates — those are the buckets the categoriser
-// drops length-dimensioned non-spacing tokens into.
-const KIND_TO_CATEGORIES: Record<LiteralKind, readonly TokenCategory[]> = {
-  COLOR: ["COLOR"],
-  LENGTH: ["SPACING", "RADIUS", "TYPOGRAPHY", "SIZING", "BORDER", "LAYOUT"],
-  DURATION: ["DURATION"],
-};
 
 // ─── Per-document mode (Hardcoded sidebar panel) ────────────────────────
 
@@ -73,26 +61,17 @@ export async function aggregateHardcodedInDocument(
   const text = document.getText();
   const relPath = workspaceRelative(document.uri);
 
+  const scopedTokens = allTokens.filter((t) => activeScopeNames.has(t.scope));
   const out: WireHardcodedMatch[] = [];
   for (const hit of findLiterals(text)) {
-    // Two filters layered: active-scope membership (the rest of the
-    // plugin already enforces this) and external-token exclusion
-    // (whitelisted external tokens are reference-only — we shouldn't
-    // suggest replacing user code with a third-party library's token).
-    const exact = index
-      .lookupAcross(hit.text, KIND_TO_CATEGORIES[hit.kind])
-      .filter((t) => activeScopeNames.has(t.scope) && !t.external);
-    const helperCalls = helperSuggestionsFor(hit.text, hit.kind, allTokens)
-      .filter((t) => activeScopeNames.has(t.scope) && !t.external);
-    // Sort exact matches semantically before concatenating helpers.
     const expectedRole = hit.cssProperty
       ? getExpectedRoleForProperty(hit.cssProperty)
       : null;
-    const ctx: ScoreContext = {
-      expectedCategory: KIND_TO_CATEGORIES[hit.kind][0],
+    const suggestions = findSuggestions(hit, index, scopedTokens, {
       expectedRole,
-    };
-    const matches = [...sortCandidates(exact, ctx), ...helperCalls];
+      excludeExternal: true,
+    });
+    const matches = suggestions.map((s) => s.token);
     if (matches.length === 0) continue;
     out.push({
       relPath,
@@ -164,21 +143,14 @@ export async function aggregateHardcodedAcrossWorkspace(
       const text = Buffer.from(buf).toString("utf8");
       const relPath = workspaceRelative(uri);
       for (const hit of findLiterals(text)) {
-        const exact = index
-          .lookupAcross(hit.text, KIND_TO_CATEGORIES[hit.kind])
-          .filter((t) => !t.external);
-        const helperCalls = helperSuggestionsFor(hit.text, hit.kind, allTokens)
-          .filter((t) => !t.external);
-        // Sort semantically even in workspace mode so the representative
-        // candidate (candidates[0]) is always the most meaningful token.
         const expectedRole = hit.cssProperty
           ? getExpectedRoleForProperty(hit.cssProperty)
           : null;
-        const ctx: ScoreContext = {
-          expectedCategory: KIND_TO_CATEGORIES[hit.kind][0],
+        const suggestions = findSuggestions(hit, index, allTokens, {
           expectedRole,
-        };
-        const candidates = [...sortCandidates(exact, ctx), ...helperCalls];
+          excludeExternal: true,
+        });
+        const candidates = suggestions.map((s) => s.token);
         if (candidates.length === 0) continue;
         matches.push({
           relPath,
