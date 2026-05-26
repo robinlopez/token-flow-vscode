@@ -7,6 +7,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](
 ### Added
 - **Multi-criteria Semantic Scoring** — The suggestion engine now ranks candidates based on structural Tiers (Semantic > Component > Primitive) and semantic Roles (Surface, Content, Stroke, Effect) inferred from the surrounding CSS property context, rather than falling back to naive name-length sorting.
 
+### Performance & Stability
+- **In-flight scan dedup** — concurrent callers (multiple visible editors firing diagnostics in parallel after an invalidation) now await a SINGLE shared scan instead of triggering N redundant workspace passes. Eliminates a known cause of compounded freezes on multi-editor sessions.
+- **Generation guard against stale cache writes** — a scan that raced an `invalidate()` will no longer commit its outdated result over the fresh cache.
+- **File watcher debounce (300ms)** — save-all bursts (formatters, multi-file refactors, branch switches) now coalesce into a single index invalidation instead of N consecutive rescans.
+- **Scope-aware JS/TS watcher** — the `**/*.{ts,tsx,js,jsx,mjs,cjs,json}` watcher used to fire on every component save anywhere in the workspace. It now watches ONLY paths declared by configured scopes (`sourcePaths` / `rootPath` / `whitelistPaths`). Stylesheets keep their broad watch since they are typically thin and bounded.
+- **No-scope mode is stylesheets-only** — when no scope is configured, the scanner no longer crawls every `.tsx` file in the workspace. JS/TS/JSON token catalogues now require explicit scope configuration. This was the dominant cause of the "98% CPU UNRESPONSIVE extension host" freezes on React projects.
+- **Default heavy-directory excludes everywhere** — `node_modules`, `dist`, `out`, `build`, `coverage`, `.next`, `.nuxt`, `.git`, `.cache`, `.turbo`, `.parcel-cache`, `target` are now excluded from every `findFiles` call, not just the legacy no-scope fallback.
+- **Per-file mtime cache** — `runScan()` now keeps a `fsPath → {mtime, text, rawTokens}` map that survives `invalidate()`. Unchanged files pay only a `stat()` on subsequent scans instead of a full `readFile` + regex pass; orphaned entries are pruned at the end of each scan.
+- **Parallel file reads + cooperative yield** — files are read in batches of 16 in parallel; the scanner yields to the event loop every 50 files so keystrokes and commands stay responsive during a workspace-wide scan. Mid-scan invalidations bail out early.
+
 
 ## [0.1.1] — 2026-05-23
 

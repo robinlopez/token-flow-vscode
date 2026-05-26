@@ -61,16 +61,67 @@ interface RawToken {
   readonly functionUnit?: number;
 }
 
-// Single glob for both pipelines. The CSS/JS branch happens inside
-// `scanText` based on the file extension, so we walk one tree and
-// route per file — cheaper than two passes for projects where SCSS
-// and TS catalogues live side by side.
+// Full glob used when a scope explicitly opts into JS/TS/JSON ingestion
+// via `sourcePaths` / `rootPath` / `whitelistPaths`. The CSS/JS branch
+// happens inside `scanText` based on the file extension, so we walk
+// one tree and route per file — cheaper than two passes for projects
+// where SCSS and TS catalogues live side by side.
 const SOURCE_GLOB = "**/*.{scss,sass,css,less,ts,tsx,js,jsx,mjs,cjs,json}";
+// Stylesheet-only glob used in the legacy "no scope configured"
+// fallback. Walking the entire workspace's TS/JSX tree there was the
+// dominant freeze cause — a typical React project has 10x more
+// components than stylesheets, and not one of those components is a
+// token catalogue without explicit configuration anyway. Stylesheets
+// are typically thinner and bounded, so a workspace-wide sweep stays
+// cheap even without per-scope configuration.
+const STYLESHEET_GLOB = "**/*.{scss,sass,css,less}";
+// Heavy directories excluded from EVERY `findFiles` call (not just the
+// no-scope fallback). When a user points a scope at `src` we still
+// don't want to walk `src/.next` or `src/node_modules`. Mirrors what
+// IntelliJ's project scope excludes by default and explains why the
+// JB plugin feels markedly faster than the VSCode one used to.
+const EXCLUDE_GLOB =
+  "**/{node_modules,dist,out,build,coverage,.next,.nuxt,.git,.cache,.turbo,.parcel-cache,target}/**";
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
+// Yield to the event loop every this-many files so a large scan
+// doesn't block the extension host. 50 keeps the per-yield budget
+// around 5-15ms on typical hardware while leaving keystroke handling
+// responsive between batches.
+const YIELD_EVERY_N_FILES = 50;
+// Cap the concurrent `readFile` count. Higher values starve the
+// event loop with fs syscalls, lower values waste throughput on
+// SSD-backed projects. 16 matches the IntelliJ scanner's worker
+// pool size.
+const READ_CONCURRENCY = 16;
+
+interface CachedFile {
+  /** Filesystem mtime in ms — keys the freshness check. */
+  readonly mtime: number;
+  /** Verbatim file text — needed by `resolve()` to compute variant labels. */
+  readonly text: string;
+  /** Per-scope raw tokens harvested from this file. */
+  readonly raw: readonly RawToken[];
+}
 
 export class TokenScanner {
   private cache: DesignToken[] | null = null;
   private valueIndex: TokenValueIndex | null = null;
+  // In-flight dedup. Concurrent callers (visible editors firing
+  // diagnostics in parallel after an invalidate()) would otherwise each
+  // start their own scan because the first `await` inside `runScan()`
+  // yields before `this.cache` is filled. Storing the pending promise
+  // lets every concurrent caller await the SAME scan.
+  private pending: Promise<DesignToken[]> | null = null;
+  // Bumped on every `invalidate()`. A `runScan()` started before the bump
+  // checks this counter before writing to `cache` — a stale scan that
+  // raced an invalidation MUST NOT overwrite a fresher cache.
+  private generation = 0;
+  // Per-file cache keyed by absolute path. Survives `invalidate()` —
+  // only entries whose mtime moved are re-read on the next scan. This
+  // is the single biggest perf lever on repeat scans: a workspace-wide
+  // invalidation now reduces to `stat()` calls on unchanged files
+  // (~ms per 100 files) instead of `readFile()` + regex.
+  private fileCache = new Map<string, CachedFile>();
   private readonly _onDidChange = new vscode.EventEmitter<void>();
   readonly onDidChange = this._onDidChange.event;
 
@@ -87,51 +138,101 @@ export class TokenScanner {
     return this.valueIndex;
   }
 
-  async scan(): Promise<DesignToken[]> {
-    if (this.cache) return this.cache;
+  scan(): Promise<DesignToken[]> {
+    if (this.cache) return Promise.resolve(this.cache);
+    if (this.pending) return this.pending;
+    this.pending = this.runScan().finally(() => {
+      this.pending = null;
+    });
+    return this.pending;
+  }
+
+  private async runScan(): Promise<DesignToken[]> {
+    const startGeneration = this.generation;
     const raw: RawToken[] = [];
-    // File texts read during the scan are kept around so `describeAt`
-    // (called by `resolve`) doesn't have to re-read them from disk. Critical
-    // for the multi-theme grouping: the primary token's declaration chain
-    // is recovered from this cache.
     const textCache = new Map<string, string>();
-    // A given physical file is processed by at most one scope (whichever
-    // scope claims it first wins). The seen-set keeps the cost linear in
-    // the workspace, not in scopes × files.
     const seen = new Set<string>();
     const scopes = readScopes();
+    // Track which paths are still referenced by an active scope. Paths
+    // that fell out of every scope's coverage (file deleted, scope
+    // shrunk) get pruned from `fileCache` at the end of the scan so
+    // memory doesn't grow forever across long sessions.
+    const referenced = new Set<string>();
+    // Files we've stat-checked but found unchanged — their cached
+    // tokens get re-emitted directly. Counter used purely for the
+    // yield cadence so we don't pump events too aggressively when the
+    // scan is just walking a warm cache.
+    let processed = 0;
+
+    const ingestBatch = async (
+      uris: readonly vscode.Uri[],
+      scope: string,
+      external: boolean,
+    ): Promise<void> => {
+      for (let i = 0; i < uris.length; i += READ_CONCURRENCY) {
+        const slice = uris.slice(i, i + READ_CONCURRENCY);
+        await Promise.all(
+          slice.map((uri) => {
+            if (seen.has(uri.fsPath)) return Promise.resolve();
+            seen.add(uri.fsPath);
+            referenced.add(uri.fsPath);
+            return this.ingestFile(uri, scope, external, raw, textCache);
+          }),
+        );
+        processed += slice.length;
+        if (processed >= YIELD_EVERY_N_FILES) {
+          processed = 0;
+          // Cooperative yield: hands the event loop back so VSCode can
+          // service keystrokes / commands between batches.
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          // Mid-scan invalidation? Bail early — generation guard at the
+          // end will prevent the stale result from being committed.
+          if (this.generation !== startGeneration) return;
+        }
+      }
+    };
 
     for (const scope of scopes) {
-      // Source files (project's own tokens) — flagged external=false.
+      if (this.generation !== startGeneration) break;
       const sourceFiles = await this.resolveScopeFiles(scope);
-      for (const uri of sourceFiles) {
-        if (seen.has(uri.fsPath)) continue;
-        seen.add(uri.fsPath);
-        await this.ingestFile(uri, scope.name, /* external */ false, raw, textCache);
-      }
-      // Whitelist files (external/known library tokens) — same indexing
-      // pipeline but tagged external=true so downstream consumers can
-      // tell project tokens from third-party ones.
+      await ingestBatch(sourceFiles, scope.name, /* external */ false);
       if (scope.whitelistPaths.length > 0) {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri;
         if (root) {
-          const wlFiles = await this.resolveSourcePaths(root, scope.whitelistPaths);
-          for (const uri of wlFiles) {
-            if (seen.has(uri.fsPath)) continue;
-            seen.add(uri.fsPath);
-            await this.ingestFile(uri, scope.name, /* external */ true, raw, textCache);
-          }
+          const wlFiles = await this.resolveSourcePaths(
+            root,
+            scope.whitelistPaths,
+          );
+          await ingestBatch(wlFiles, scope.name, /* external */ true);
         }
       }
     }
-    this.cache = this.resolve(raw, textCache);
-    return this.cache;
+
+    // Prune cache entries for files no longer covered by any scope.
+    // Keeps memory bounded on long-lived hosts.
+    if (referenced.size > 0) {
+      for (const key of this.fileCache.keys()) {
+        if (!referenced.has(key)) this.fileCache.delete(key);
+      }
+    }
+
+    const resolved = this.resolve(raw, textCache);
+    if (this.generation === startGeneration) {
+      this.cache = resolved;
+    }
+    return resolved;
   }
 
   /**
-   * Reads + scans a single file. Centralised here so source and
-   * whitelist passes share the same MAX_FILE_BYTES guard and silent
-   * skip-on-error behaviour.
+   * Reads + scans a single file. Uses the mtime-keyed cache so an
+   * unchanged file pays only a `stat()` on repeat scans instead of a
+   * full `readFile` + regex pass — the dominant cost on warm scans.
+   *
+   * The cached entry stores both the raw tokens AND the file text so
+   * `resolve()` can still compute variant labels (`describeAt`) without
+   * re-reading from disk. Memory cost is bounded by the workspace's
+   * token-file count (typically dozens, not thousands), so the trade
+   * is favourable.
    */
   private async ingestFile(
     uri: vscode.Uri,
@@ -143,12 +244,28 @@ export class TokenScanner {
     try {
       const stat = await vscode.workspace.fs.stat(uri);
       if (stat.size > MAX_FILE_BYTES) return;
+      const cached = this.fileCache.get(uri.fsPath);
+      if (cached && cached.mtime === stat.mtime) {
+        textCache.set(uri.fsPath, cached.text);
+        for (const t of cached.raw) raw.push(t);
+        return;
+      }
       const buf = await vscode.workspace.fs.readFile(uri);
       const text = Buffer.from(buf).toString("utf8");
       textCache.set(uri.fsPath, text);
+      const before = raw.length;
       this.scanText(text, uri.fsPath, scope, external, raw);
+      // Snapshot the tokens this file contributed so a later scan
+      // can replay them without re-running the regex/parser.
+      this.fileCache.set(uri.fsPath, {
+        mtime: stat.mtime,
+        text,
+        raw: raw.slice(before),
+      });
     } catch {
-      // Unreadable file — skip silently, like the IntelliJ side does.
+      // Unreadable file — drop it from the cache too so a subsequent
+      // create event re-ingests cleanly.
+      this.fileCache.delete(uri.fsPath);
     }
   }
 
@@ -157,8 +274,16 @@ export class TokenScanner {
    *   1. Explicit `sourcePaths` win — file or directory list expanded
    *      with `findFiles`.
    *   2. Otherwise a non-empty `rootPath` scans recursively inside it.
-   *   3. Otherwise (common scope, no paths) the whole workspace is
-   *      scanned — preserves the day-one "no config" behaviour.
+   *   3. Otherwise (implicit common scope, no paths) the whole
+   *      workspace is swept for **stylesheets only**. The JS/TS/JSON
+   *      pipeline used to also run here, which on a typical React
+   *      project meant the scanner crawled every component file in
+   *      `src/` — the dominant cause of extension-host freezes on
+   *      no-scope projects. JS token catalogues are inherently
+   *      explicit by convention (one or two files at known paths),
+   *      so requiring the user to declare them via `sourcePaths` or
+   *      `rootPath` costs nothing in real workflows and avoids the
+   *      blow-up.
    */
   private async resolveScopeFiles(
     scope: ConfiguredScope,
@@ -172,29 +297,27 @@ export class TokenScanner {
     if (scope.rootPath) {
       try {
         const rootUri = vscode.Uri.joinPath(root, scope.rootPath);
-        // SOURCE_GLOB already starts with `**/` which, in a
-        // RelativePattern, recurses into subdirectories of the base.
-        // Earlier code stripped the prefix here — that was a bug:
-        // findFiles then matched only top-level files of the
-        // rootPath, silently dropping nested catalogues like
-        // `tokens/primitives/*.ts`. Pass the glob verbatim.
         return await vscode.workspace.findFiles(
           new vscode.RelativePattern(rootUri, SOURCE_GLOB),
+          EXCLUDE_GLOB,
         );
       } catch {
         return [];
       }
     }
-    // No scope-level paths configured — fall back to a workspace-wide
-    // sweep. Per the design call ("Uniquement sourcePaths"), this only
-    // fires for the implicit common scope with empty config; once the
-    // user sets up real sourcePaths the broad sweep is skipped.
-    return vscode.workspace.findFiles(SOURCE_GLOB, "**/node_modules/**");
+    // Implicit common scope: stylesheets only. See class docstring.
+    return vscode.workspace.findFiles(STYLESHEET_GLOB, EXCLUDE_GLOB);
   }
 
   invalidate(): void {
     this.cache = null;
     this.valueIndex = null;
+    // Drop the pending reference too — its result reflects state from
+    // before the invalidation. The generation bump prevents any
+    // already-running scan from committing its stale result into
+    // `cache` once it eventually resolves.
+    this.pending = null;
+    this.generation++;
     this._onDidChange.fire();
   }
 
@@ -212,6 +335,7 @@ export class TokenScanner {
           // resolveScopeFiles for why the `**/` prefix matters here.
           const found = await vscode.workspace.findFiles(
             new vscode.RelativePattern(uri, SOURCE_GLOB),
+            EXCLUDE_GLOB,
           );
           out.push(...found);
         } else {

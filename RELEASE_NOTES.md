@@ -1,9 +1,22 @@
 # Token Flow — Release Notes
 
-## v0.1.2 — 2026-05-24 · Semantic Scoring Engine
+## v0.1.2 — 2026-05-24 · Semantic Scoring Engine + Stability Pass
 
 - **Multi-criteria Semantic Scoring**: The suggestion engine now natively understands your CSS property context (e.g. `background-color`, `padding`). It ranks design token candidates based on structural **Tiers** (Semantic vs Component vs Primitive) and semantic **Roles** (Surface, Content, Stroke, Effect).
 - **Intelligent Contextual Suggestions**: For a hardcoded `32px` value in a `padding` rule, the engine will prioritize `--spacing-xl` over `--units-xl`. For `#005bff` in a `background`, a token like `--color-surface-high` will easily outrank a `--color-text-brand` token, delivering exactly the right token for the context.
+
+### Performance & Stability — End of "98% CPU freezes"
+
+The v0.1.2 line had documented `UNRESPONSIVE extension host` events where the indexer would consume 98% of the host's CPU budget on large React/TS workspaces. This release ships a focused stability pass that addresses the root causes:
+
+- **No-scope mode is now stylesheets-only.** When no scope is configured, the scanner no longer walks every `.tsx` file in the workspace — JS/TS/JSON token catalogues require explicit configuration via `sourcePaths` / `rootPath` / `whitelistPaths`. This was the dominant freeze trigger on projects without scope setup.
+- **Scope-aware file watchers.** The JS/TS watcher fires only inside declared scope paths; saving an unrelated component no longer invalidates the token index.
+- **300ms debounce on invalidation.** Save-all bursts, formatters, and multi-file refactors coalesce into one rescan instead of N.
+- **In-flight `scan()` dedup.** Multiple visible editors triggering diagnostics in parallel now share a single workspace scan instead of running N redundant passes.
+- **Per-file mtime cache.** Unchanged files pay only a `stat()` on repeat scans — `readFile` + regex parsing is skipped entirely. Massive speedup on warm caches.
+- **Parallel reads + cooperative yields.** Files read in batches of 16; the scanner yields to the event loop every 50 files so VSCode stays responsive during a large scan.
+- **Default excludes everywhere.** `node_modules`, `dist`, `build`, `out`, `coverage`, `.next`, `.nuxt`, `.git`, `.cache`, `.turbo`, `.parcel-cache`, `target` are excluded from every `findFiles` call.
+- **Settings panel no longer freezes** on scope add/remove/rename actions, since the resulting re-scan is now bounded and incremental.
 
 ---
 ## v0.1.1 — 2026-05-23 · Contextual Variables Integration

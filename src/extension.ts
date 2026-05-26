@@ -29,6 +29,7 @@ import { registerAlternativesCompletion } from "./views/alternativesCompletion";
 import { ActiveScopeTracker } from "./services/activeScopeTracker";
 import { DesignToken } from "./model/designToken";
 import { DynamicCssVarIndex } from "./scanner/dynamicCssVarIndex";
+import { readScopes } from "./settings/scopes";
 
 export function activate(context: vscode.ExtensionContext): void {
   const scanner = new TokenScanner();
@@ -169,22 +170,77 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // ─── Index invalidation ───────────────────────────────────────────────
-  // Glob covers every file type the scanner can ingest. JS/TS/JSON join
-  // the watch list here in Phase 1 so the index re-runs the moment a
-  // token catalogue file changes, even though their parser modules are
-  // still no-ops — they'll start emitting tokens in Phase 2 without any
-  // additional wiring on this side.
-  const watcher = vscode.workspace.createFileSystemWatcher(
-    "**/*.{scss,sass,css,less,ts,tsx,js,jsx,mjs,cjs,json}",
+  // The watcher used to fire on every `.ts/.tsx/.js/.jsx` save anywhere
+  // in the workspace — under the assumption that token files might live
+  // there. On a real React/TS project that meant a full re-scan on every
+  // component save, which is the documented cause of the
+  // 98%-CPU-extension-host freezes (see the "UNRESPONSIVE extension
+  // host" log lines in v0.1.2).
+  //
+  // We now split the watching into two layers:
+  //   • Stylesheets — always watched broadly. Stylesheet files are
+  //     typically far less numerous than TS files, and token
+  //     declarations there can live anywhere (legacy code, app-level
+  //     overrides, theme partials). Cost stays bounded.
+  //   • JS/TS/JSON — watched ONLY inside the file sets each configured
+  //     scope claims via `sourcePaths` / `rootPath` / `whitelistPaths`.
+  //     Saving an unrelated component file does NOT invalidate the
+  //     token index. When no scope is configured (legacy implicit
+  //     common scope), the watcher is wired to nothing — a manual
+  //     "Refresh index" command still works.
+  //
+  // All invalidation paths go through a 300ms debouncer so a save-all
+  // burst (formatter, multi-file refactor) collapses into one rescan.
+
+  let debounceTimer: NodeJS.Timeout | null = null;
+  const scheduleInvalidate = (): void => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      scanner.invalidate();
+    }, 300);
+  };
+
+  const stylesheetWatcher = vscode.workspace.createFileSystemWatcher(
+    "**/*.{scss,sass,css,less}",
   );
-  watcher.onDidChange(() => scanner.invalidate());
-  watcher.onDidCreate(() => scanner.invalidate());
-  watcher.onDidDelete(() => scanner.invalidate());
-  context.subscriptions.push(watcher);
+  stylesheetWatcher.onDidChange(scheduleInvalidate);
+  stylesheetWatcher.onDidCreate(scheduleInvalidate);
+  stylesheetWatcher.onDidDelete(scheduleInvalidate);
+  context.subscriptions.push(stylesheetWatcher);
+
+  // JS/TS/JSON watchers are rebuilt every time the scope config
+  // changes, so they always reflect the active set of token-source
+  // paths. Tracked here so we can dispose them before re-creating.
+  let jsWatchers: vscode.Disposable[] = [];
+  const rewireJsWatchers = (): void => {
+    for (const w of jsWatchers) w.dispose();
+    jsWatchers = [];
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) return;
+    const patterns = collectJsWatchPatterns(root);
+    for (const pattern of patterns) {
+      const w = vscode.workspace.createFileSystemWatcher(pattern);
+      w.onDidChange(scheduleInvalidate);
+      w.onDidCreate(scheduleInvalidate);
+      w.onDidDelete(scheduleInvalidate);
+      jsWatchers.push(w);
+    }
+  };
+  rewireJsWatchers();
+  context.subscriptions.push({
+    dispose: () => {
+      for (const w of jsWatchers) w.dispose();
+    },
+  });
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("tokenFlow")) scanner.invalidate();
+      if (!e.affectsConfiguration("tokenFlow")) return;
+      // Scope changes alter which JS/TS files we should be watching.
+      // Rewire before invalidating so the next scan sees the new set.
+      rewireJsWatchers();
+      scheduleInvalidate();
     }),
   );
 
@@ -291,6 +347,61 @@ async function revealToken(token: DesignToken): Promise<void> {
     new vscode.Range(pos, pos),
     vscode.TextEditorRevealType.InCenter,
   );
+}
+
+/**
+ * Builds the list of `RelativePattern`s the JS/TS/JSON watcher should
+ * cover, derived from every configured scope's `sourcePaths`,
+ * `rootPath` and `whitelistPaths`.
+ *
+ * A scope-less workspace (or one whose paths point only at .scss
+ * directories) yields zero patterns — the stylesheet watcher handles
+ * those, and JS files in unconfigured scopes aren't token sources to
+ * begin with.
+ *
+ * Each path resolves to a file-or-directory entry. Directories use the
+ * recursive `**\/*.{ts,tsx,js,jsx,mjs,cjs,json}` glob; individual files
+ * use a literal-name pattern so renaming or deleting the file still
+ * fires `onDidDelete`.
+ */
+function collectJsWatchPatterns(root: vscode.Uri): vscode.RelativePattern[] {
+  const JS_EXTS = "{ts,tsx,js,jsx,mjs,cjs,json}";
+  const patterns: vscode.RelativePattern[] = [];
+  const seen = new Set<string>();
+  const addDir = (rel: string): void => {
+    const key = `dir:${rel}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const base = rel.trim() ? vscode.Uri.joinPath(root, rel) : root;
+    patterns.push(new vscode.RelativePattern(base, `**/*.${JS_EXTS}`));
+  };
+  const addPath = (rel: string): void => {
+    const cleaned = rel.replace(/^\/+|\/+$/g, "");
+    if (!cleaned) return;
+    // We can't synchronously stat here (this function is called from
+    // configuration-change listeners) — pessimistically register BOTH
+    // a directory recursive pattern AND a literal-name pattern. The
+    // VSCode FS-watcher dedupes events naturally so this only costs
+    // an extra watch descriptor on the OS side.
+    addDir(cleaned);
+    const dirKey = `file:${cleaned}`;
+    if (!seen.has(dirKey)) {
+      seen.add(dirKey);
+      // Only emits when the exact filename appears under root —
+      // covers the case where a sourcePath points at a single file.
+      const idx = cleaned.lastIndexOf("/");
+      const parent = idx >= 0 ? cleaned.substring(0, idx) : "";
+      const name = idx >= 0 ? cleaned.substring(idx + 1) : cleaned;
+      const base = parent ? vscode.Uri.joinPath(root, parent) : root;
+      patterns.push(new vscode.RelativePattern(base, name));
+    }
+  };
+  for (const scope of readScopes()) {
+    for (const p of scope.sourcePaths) addPath(p);
+    for (const p of scope.whitelistPaths) addPath(p);
+    if (scope.rootPath) addDir(scope.rootPath);
+  }
+  return patterns;
 }
 
 export function deactivate(): void {
