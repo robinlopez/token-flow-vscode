@@ -1,6 +1,53 @@
 # Token Flow — Release Notes
 
-## v0.1.2 — 2026-05-23 · Contextual Variables Integration
+## v0.1.2 — 2026-05-24 · Semantic Scoring Engine + Stability Pass + IntelliJ Parity + Analyser Split
+
+### Analyser — Hardcoded clusters & values, split
+
+The single "Hardcoded clusters" section is now two complementary views, mirroring IntelliJ [#19](https://github.com/robinlopez/token-flow/issues/19):
+
+- **Hardcoded clusters** — repeated literals with NO matching token in the active scope. These are **design opportunities** — values worth promoting into the design system.
+- **Hardcoded values** *(new)* — literals whose token already exists for the same `(value, category)` pair. These are **actionable debt** — the fix is mechanical, the user just needs to apply the existing token.
+
+Values are bucketed by `(literal + property family)`. The same `12px` used as `padding` and as `font-size` shows up as two distinct rows, each carrying the most relevant suggestion (`--spacing-sm` vs `--text-sm-line-height`) from the unified suggestion engine.
+
+The legacy `HARDCODED_PRESSURE` score axis is replaced by:
+- `HARDCODED_OPPORTUNITY` (weight 15, x1 per hit)
+- `HARDCODED_DEBT` (weight 10, x2 per hit — the fix is immediate, the penalty is sharper)
+
+---
+
+
+
+- **Multi-criteria Semantic Scoring**: The suggestion engine now natively understands your CSS property context (e.g. `background-color`, `padding`). It ranks design token candidates based on structural **Tiers** (Semantic vs Component vs Primitive) and semantic **Roles** (Surface, Content, Stroke, Effect).
+- **Intelligent Contextual Suggestions**: For a hardcoded `32px` value in a `padding` rule, the engine will prioritize `--spacing-xl` over `--units-xl`. For `#005bff` in a `background`, a token like `--color-surface-high` will easily outrank a `--color-text-brand` token, delivering exactly the right token for the context.
+
+### Suggestion Engine — full parity with IntelliJ
+
+The VSCode suggestion engine is now a faithful port of `SuggestionEngine.kt`. Every behaviour the IntelliJ users rely on is now available on VSCode:
+
+- **Cross-family demotion**: a TYPOGRAPHY token will never outrank a SPACING token on `padding`, even when the spacing scale doesn't contain that value.
+- **Typography-name guard**: tokens literally named `--size-typography-…` won't surface on `width: …` declarations even if their declared category is SIZING.
+- **Colour-distance fallback**: when no exact colour match exists, near-match tokens (RGBA Δ ≤ 0.05) are now suggested — sorted by colour proximity first, semantic score second. Previously the diagnostic stayed silent.
+- **Helper-aware suggestions (`spacing(1.5)`, `radius(2)`)**: synthetic helper-call candidates are composed and ranked alongside direct matches everywhere — diagnostics, hardcoded panel, and Analyser dashboard.
+- **SCSS variable scoring fix**: a regex bug meant `$`-prefixed SCSS variables were never normalised, so their tier and role extraction silently mis-scored. SCSS tokens now rank consistently with their CSS-custom-property siblings.
+- **JS-object-path tokens**: `primitive.units.xl`-style tokens are now correctly classified as PRIMITIVE instead of falling through to SEMANTIC.
+
+### Performance & Stability — End of "98% CPU freezes"
+
+The v0.1.2 line had documented `UNRESPONSIVE extension host` events where the indexer would consume 98% of the host's CPU budget on large React/TS workspaces. This release ships a focused stability pass that addresses the root causes:
+
+- **No-scope mode is now stylesheets-only.** When no scope is configured, the scanner no longer walks every `.tsx` file in the workspace — JS/TS/JSON token catalogues require explicit configuration via `sourcePaths` / `rootPath` / `whitelistPaths`. This was the dominant freeze trigger on projects without scope setup.
+- **Scope-aware file watchers.** The JS/TS watcher fires only inside declared scope paths; saving an unrelated component no longer invalidates the token index.
+- **300ms debounce on invalidation.** Save-all bursts, formatters, and multi-file refactors coalesce into one rescan instead of N.
+- **In-flight `scan()` dedup.** Multiple visible editors triggering diagnostics in parallel now share a single workspace scan instead of running N redundant passes.
+- **Per-file mtime cache.** Unchanged files pay only a `stat()` on repeat scans — `readFile` + regex parsing is skipped entirely. Massive speedup on warm caches.
+- **Parallel reads + cooperative yields.** Files read in batches of 16; the scanner yields to the event loop every 50 files so VSCode stays responsive during a large scan.
+- **Default excludes everywhere.** `node_modules`, `dist`, `build`, `out`, `coverage`, `.next`, `.nuxt`, `.git`, `.cache`, `.turbo`, `.parcel-cache`, `target` are excluded from every `findFiles` call.
+- **Settings panel no longer freezes** on scope add/remove/rename actions, since the resulting re-scan is now bounded and incremental.
+
+---
+## v0.1.1 — 2026-05-23 · Contextual Variables Integration
 
 - **DynamicCssVarIndex**: Token Flow now globally indexes contextual CSS variables across your entire workspace, including `CSS`, `SCSS`, `Vue`, `React`, and `Angular` styles.
 - **Show Contextual Variable References (`Ctrl+T` / `Alt+T`)**: Triggering "Show Alternatives" on a known contextual variable opens a QuickPick listing all its declarations and usages across the project (sorted by static vs runtime).

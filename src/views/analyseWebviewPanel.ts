@@ -311,6 +311,9 @@ function toWireReport(
     hardcodedClusters: report.hardcodedClusters.map((c) =>
       toWireHardcoded(c, rootPath),
     ),
+    hardcodedValues: report.hardcodedValues.map((v) =>
+      toWireHardcodedValue(v, rootPath),
+    ),
     coverage: {
       tokenisedAssignments: report.coverage.tokenisedAssignments,
       literalAssignments: report.coverage.literalAssignments,
@@ -374,6 +377,28 @@ function toWireHardcoded(
     category: c.category,
     matchingTokenName: c.matchingTokenName,
     occurrences: c.occurrences.map((o) => {
+      const relPath = makeRelative(o.filePath, rootPath);
+      return {
+        relPath,
+        basename: basenameOf(relPath),
+        parent: parentNameOf(relPath),
+        offset: o.offset,
+        line: o.line,
+      };
+    }),
+  };
+}
+
+function toWireHardcodedValue(
+  v: import("../scanner/designSystemAnalyzer").HardcodedValue,
+  rootPath: string | null,
+): import("../webview/shared/protocol").WireHardcodedValue {
+  return {
+    literal: v.literal,
+    category: v.category,
+    suggestedTokenName: v.suggestedToken?.name ?? null,
+    suggestedTokenValue: v.suggestedToken?.resolvedValue ?? null,
+    occurrences: v.occurrences.map((o) => {
       const relPath = makeRelative(o.filePath, rootPath);
       return {
         relPath,

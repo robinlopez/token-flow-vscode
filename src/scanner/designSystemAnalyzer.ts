@@ -26,6 +26,8 @@ import { DynamicCssVarIndex } from "./dynamicCssVarIndex";
 import { findLiterals, LiteralKind } from "./literalFinder";
 import { TokenValueIndex } from "./tokenValueIndex";
 import { resolveReference } from "./tokenNameParser";
+import { findSuggestions } from "./findSuggestions";
+import { getExpectedRoleForProperty } from "../model/semantics";
 import { DesignToken, TokenCategory } from "../model/designToken";
 import {
   activeScopesFor,
@@ -45,7 +47,12 @@ export type Axis =
   | "SEMANTIC_COHERENCE"
   | "USAGE_COVERAGE"
   | "DUPLICATION"
-  | "HARDCODED_PRESSURE"
+  // Split parity with IntelliJ #19 — replaces the legacy
+  // HARDCODED_PRESSURE axis with two:
+  //   • OPPORTUNITY (weight 15, x1) — repeated literal, no token exists
+  //   • DEBT        (weight 10, x2) — token exists; fix is mechanical
+  | "HARDCODED_OPPORTUNITY"
+  | "HARDCODED_DEBT"
   | "REFERENCE_INTEGRITY";
 
 export interface SubScore {
@@ -82,6 +89,22 @@ export interface HardcodedCluster {
   readonly matchingTokenName: string | null;
 }
 
+/**
+ * Literal repeated across the codebase whose token **already exists**
+ * in the active scope's design system. Mirror of IntelliJ's
+ * `HardcodedValue` — actionable debt, the fix is mechanical.
+ *
+ * Bucketing key is `(literal + category)`, so `12px` used as `padding`
+ * (SPACING) and `12px` used as `font-size` (TYPOGRAPHY) show up as two
+ * separate rows, each carrying their own role-aware suggestion.
+ */
+export interface HardcodedValue {
+  readonly literal: string;
+  readonly category: TokenCategory | null;
+  readonly suggestedToken: DesignToken | null;
+  readonly occurrences: readonly HardcodedOccurrence[];
+}
+
 export interface BrokenReference {
   readonly name: string;
   readonly filePath: string;
@@ -110,6 +133,7 @@ export interface AnalysisReport {
   readonly incoherences: readonly Incoherence[];
   readonly duplicateClusters: readonly DuplicateCluster[];
   readonly hardcodedClusters: readonly HardcodedCluster[];
+  readonly hardcodedValues: readonly HardcodedValue[];
   readonly coverage: Coverage;
   readonly brokenReferences: readonly BrokenReference[];
   readonly unusedTokens: readonly DesignToken[];
@@ -163,10 +187,8 @@ export async function analyzeDesignSystem(
     .filter((t) => !coverageScan.referencedNames.has(t.name))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const hardcodedClusters = buildHardcodedClusters(
-    coverageScan.literalsByFile,
-    valueIndex,
-  );
+  const { clusters: hardcodedClusters, values: hardcodedValues } =
+    collectHardcodedScan(coverageScan.literalsByFile, valueIndex, tokens);
 
   const subScores = computeSubScores({
     totalTokens: tokens.length,
@@ -174,6 +196,7 @@ export async function analyzeDesignSystem(
     duplicateClusters,
     coverage: coverageScan.coverage,
     hardcodedClusters,
+    hardcodedValues,
     brokenCount: coverageScan.brokenReferences.length,
   });
   const score = weightedAverage(subScores);
@@ -185,6 +208,7 @@ export async function analyzeDesignSystem(
     incoherences,
     duplicateClusters,
     hardcodedClusters,
+    hardcodedValues,
     coverage: coverageScan.coverage,
     brokenReferences: coverageScan.brokenReferences,
     unusedTokens,
@@ -389,6 +413,10 @@ interface LiteralWithFile {
   readonly kind: LiteralKind;
   readonly offset: number;
   readonly line: number;
+  /** CSS property in which the literal appears, when detectable. Drives
+   *  property-family bucketing — `12px` under `padding` lands in a
+   *  different SPACING bucket than `12px` under `font-size`. */
+  readonly cssProperty: string | null;
 }
 
 const CSS_REF_RE = /var\(\s*--([A-Za-z_][A-Za-z0-9_-]*)(?:\s*,[^)]*)?\)/g;
@@ -485,6 +513,7 @@ async function computeCoverage(
           kind: hit.kind,
           offset: hit.startOffset,
           line: lineFor(text, hit.startOffset),
+          cssProperty: hit.cssProperty,
         });
         literal++;
       }
@@ -741,45 +770,131 @@ function perSourceUsage(
   return out.sort((a, b) => a.ratio - b.ratio);
 }
 
-// ─── Hardcoded clusters ─────────────────────────────────────────────────
+// ─── Hardcoded scan (clusters + values) ─────────────────────────────────
 
-function buildHardcodedClusters(
+interface HardcodedScan {
+  readonly clusters: HardcodedCluster[];
+  readonly values: HardcodedValue[];
+}
+
+/**
+ * Walks every literal collected during the coverage pass, buckets them
+ * by `(literal + category)` (category derived from the surrounding CSS
+ * property when known, otherwise from the literal's kind), then asks
+ * `findSuggestions` for an exact in-category match per bucket:
+ *
+ *   • Match found → the literal is **debt** — a token already exists,
+ *     the user just needs to apply it. Reported as a `HardcodedValue`.
+ *   • No match    → the literal is an **opportunity** — only kept
+ *     when it repeats at least MIN_HARDCODED_CLUSTER times in the
+ *     workspace (a single occurrence isn't worth a design-system
+ *     discussion). Reported as a `HardcodedCluster`.
+ *
+ * The "strict category" filter on the exact match is intentional:
+ * `TokenValueIndex` widens lookups across the length-bearing family,
+ * which is great for surfacing closest-fit suggestions but misleading
+ * here — we don't want to flag a `width: 20px` literal as debt just
+ * because a typography token happens to hold 20px.
+ */
+function collectHardcodedScan(
   literalsByFile: Map<string, LiteralWithFile[]>,
   valueIndex: TokenValueIndex,
-): HardcodedCluster[] {
+  tokens: readonly DesignToken[],
+): HardcodedScan {
+  // Bucket key encodes both the literal and the property family — same
+  // literal under two different properties produces two buckets.
   const buckets = new Map<string, LiteralWithFile[]>();
   for (const list of literalsByFile.values()) {
     for (const lit of list) {
-      const key = lit.text.toLowerCase();
+      const cat = categoryForLiteral(lit);
+      const key = `${lit.text.toLowerCase()}|${cat ?? "_"}`;
       const arr = buckets.get(key) ?? [];
       arr.push(lit);
       buckets.set(key, arr);
     }
   }
 
-  const out: HardcodedCluster[] = [];
-  for (const [key, occurrences] of buckets) {
-    if (occurrences.length < MIN_HARDCODED_CLUSTER) continue;
-    const kind = occurrences[0].kind;
-    const cat = categoryForKind(kind);
-    const matching = cat
-      ? valueIndex.lookupAcross(key, [cat])[0]?.name ?? null
+  const clusters: HardcodedCluster[] = [];
+  const values: HardcodedValue[] = [];
+
+  for (const occurrences of buckets.values()) {
+    const first = occurrences[0];
+    const category = categoryForLiteral(first);
+
+    // Synthetic Hit for findSuggestions — only `text` and `kind` matter
+    // for the lookup; offsets / replace range / cssProperty are not read
+    // by the suggestion pipeline beyond the (already-resolved) category.
+    const syntheticHit = {
+      text: first.text,
+      startOffset: 0,
+      endOffsetExclusive: first.text.length,
+      kind: first.kind,
+      replaceStart: 0,
+      replaceEndExclusive: first.text.length,
+      replaceText: first.text,
+      cssProperty: first.cssProperty,
+    } as const;
+    const expectedRole = first.cssProperty
+      ? getExpectedRoleForProperty(first.cssProperty)
       : null;
-    if (matching) continue;
-    out.push({
-      literal: key,
-      category: cat,
-      occurrences: occurrences.map((o) => ({
-        filePath: o.filePath,
-        offset: o.offset,
-        line: o.line,
-      })),
-      matchingTokenName: null,
+    const suggestions = findSuggestions(syntheticHit, valueIndex, tokens, {
+      expectedCategory: category,
+      expectedRole,
+      excludeExternal: true,
     });
+
+    // Strict category match: see docstring.
+    const exact = suggestions.find(
+      (s) =>
+        s.exact &&
+        (category === null || s.token.category === category),
+    );
+
+    const occList = occurrences.map<HardcodedOccurrence>((o) => ({
+      filePath: o.filePath,
+      offset: o.offset,
+      line: o.line,
+    }));
+
+    if (exact) {
+      values.push({
+        literal: first.text.toLowerCase(),
+        category,
+        suggestedToken: exact.token,
+        occurrences: occList,
+      });
+    } else if (occurrences.length >= MIN_HARDCODED_CLUSTER) {
+      clusters.push({
+        literal: first.text.toLowerCase(),
+        category,
+        occurrences: occList,
+        matchingTokenName: null,
+      });
+    }
   }
-  return out
-    .sort((a, b) => b.occurrences.length - a.occurrences.length)
-    .slice(0, MAX_HARDCODED_CLUSTERS);
+
+  return {
+    clusters: clusters
+      .sort((a, b) => b.occurrences.length - a.occurrences.length)
+      .slice(0, MAX_HARDCODED_CLUSTERS),
+    values: values
+      .sort((a, b) => b.occurrences.length - a.occurrences.length)
+      .slice(0, MAX_HARDCODED_CLUSTERS),
+  };
+}
+
+/**
+ * Most-specific category for the literal. Uses the surrounding CSS
+ * property when known (e.g. `font-size: 12px` → TYPOGRAPHY) and falls
+ * back to the literal's kind otherwise (JS object literals, SCSS map
+ * values without a top-level property).
+ */
+function categoryForLiteral(lit: LiteralWithFile): TokenCategory | null {
+  if (lit.cssProperty) {
+    const fromProp = categoryForCssProperty(lit.cssProperty);
+    if (fromProp) return fromProp;
+  }
+  return categoryForKind(lit.kind);
 }
 
 function categoryForKind(kind: LiteralKind): TokenCategory | null {
@@ -793,6 +908,73 @@ function categoryForKind(kind: LiteralKind): TokenCategory | null {
   }
 }
 
+/**
+ * Maps a CSS property to the token category that best describes the
+ * design-system axis it draws on. Conservative: returns `null` when
+ * the property is ambiguous or doesn't pin a single category (e.g.
+ * `transform`, `transition`).
+ */
+function categoryForCssProperty(prop: string): TokenCategory | null {
+  const p = prop.toLowerCase().trim();
+  // Typography axis.
+  if (
+    p === "font-size" ||
+    p === "line-height" ||
+    p === "letter-spacing" ||
+    p === "font-weight" ||
+    p === "font-family"
+  ) {
+    return "TYPOGRAPHY";
+  }
+  // Radius axis.
+  if (p.startsWith("border-radius") || p.endsWith("-radius")) {
+    return "RADIUS";
+  }
+  // Border-width axis.
+  if (p === "border-width" || p.endsWith("-border-width") ||
+      p === "outline-width" || p === "outline-offset") {
+    return "BORDER";
+  }
+  // Sizing axis.
+  if (
+    p === "width" || p === "height" ||
+    p === "min-width" || p === "min-height" ||
+    p === "max-width" || p === "max-height" ||
+    p === "inline-size" || p === "block-size"
+  ) {
+    return "SIZING";
+  }
+  // Spacing axis — padding, margin, gap.
+  if (
+    p === "padding" || p.startsWith("padding-") || p.startsWith("padding-inline") ||
+    p === "margin" || p.startsWith("margin-") || p.startsWith("margin-inline") ||
+    p === "gap" || p === "row-gap" || p === "column-gap" || p === "top" ||
+    p === "right" || p === "bottom" || p === "left" || p === "inset"
+  ) {
+    return "SPACING";
+  }
+  // Colour axis — properties whose value is colour-typed.
+  if (
+    p === "color" || p === "background-color" || p === "background" ||
+    p.endsWith("-color") || p === "fill" || p === "stroke" ||
+    p === "caret-color" || p === "accent-color"
+  ) {
+    return "COLOR";
+  }
+  // Shadow axis.
+  if (p === "box-shadow" || p === "text-shadow") return "SHADOW";
+  // Duration / timing.
+  if (p === "transition-duration" || p === "animation-duration" ||
+      p === "transition-delay" || p === "animation-delay") {
+    return "DURATION";
+  }
+  // Z-index.
+  if (p === "z-index") return "Z_INDEX";
+  // Opacity.
+  if (p === "opacity") return "OPACITY";
+  return null;
+}
+
 // ─── Sub-score aggregation ──────────────────────────────────────────────
 
 interface SubScoreInputs {
@@ -801,6 +983,7 @@ interface SubScoreInputs {
   readonly duplicateClusters: readonly DuplicateCluster[];
   readonly coverage: Coverage;
   readonly hardcodedClusters: readonly HardcodedCluster[];
+  readonly hardcodedValues: readonly HardcodedValue[];
   readonly brokenCount: number;
 }
 
@@ -814,12 +997,26 @@ function computeSubScores(inputs: SubScoreInputs): SubScore[] {
     0,
   );
   const duplicateScore = clamp(100 - (100 * duplicateOffenders) / total);
-  const hardcodedHits = inputs.hardcodedClusters.reduce(
+
+  const literalsTotal = Math.max(1, inputs.coverage.literalAssignments);
+
+  // Opportunity: literals with NO matching token. Each hit pads the
+  // deficit linearly — these are design opportunities, not bugs, so
+  // weighting is moderate (w15, x1).
+  const opportunityHits = inputs.hardcodedClusters.reduce(
     (n, c) => n + c.occurrences.length,
     0,
   );
-  const literalsTotal = Math.max(1, inputs.coverage.literalAssignments);
-  const hardcodedScore = clamp(100 - (100 * hardcodedHits) / literalsTotal);
+  const opportunityScore = clamp(100 - (100 * opportunityHits) / literalsTotal);
+
+  // Debt: literals whose token already exists. Penalty per hit is x2
+  // vs. opportunity — the fix is immediate and the user has no excuse
+  // not to apply the existing token (w10, x2).
+  const debtHits = inputs.hardcodedValues.reduce(
+    (n, c) => n + c.occurrences.length,
+    0,
+  );
+  const debtScore = clamp(100 - (100 * debtHits * 2) / literalsTotal);
 
   const refTotal = Math.max(1, inputs.coverage.tokenisedAssignments);
   const refIntegrityScore = clamp(
@@ -839,7 +1036,7 @@ function computeSubScores(inputs: SubScoreInputs): SubScore[] {
     {
       axis: "USAGE_COVERAGE",
       score: coverageScore,
-      weight: 25,
+      weight: 20,
       caption: `${inputs.coverage.tokenisedAssignments} tokenised vs ${inputs.coverage.literalAssignments} literal references.`,
     },
     {
@@ -852,10 +1049,19 @@ function computeSubScores(inputs: SubScoreInputs): SubScore[] {
           : `${inputs.duplicateClusters.length} cluster(s), ${duplicateOffenders} extra token(s).`,
     },
     {
-      axis: "HARDCODED_PRESSURE",
-      score: hardcodedScore,
-      weight: 20,
-      caption: `${inputs.hardcodedClusters.length} repeated literal(s) worth tokenising.`,
+      axis: "HARDCODED_OPPORTUNITY",
+      score: opportunityScore,
+      weight: 15,
+      caption: `${inputs.hardcodedClusters.length} repeated literal(s) without a matching token.`,
+    },
+    {
+      axis: "HARDCODED_DEBT",
+      score: debtScore,
+      weight: 10,
+      caption:
+        inputs.hardcodedValues.length === 0
+          ? "No literal usages of an already-tokenised value."
+          : `${inputs.hardcodedValues.length} value(s) replaceable by an existing token (${debtHits} hits).`,
     },
     {
       axis: "REFERENCE_INTEGRITY",

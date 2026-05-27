@@ -31,6 +31,14 @@ export interface Hit {
   readonly replaceEndExclusive: int;
   /** Source text of the replace range — used by the quick-fix preview. */
   readonly replaceText: string;
+  /**
+   * The CSS property name this literal is the value of, e.g. `"background-color"`.
+   * Extracted by walking back from [startOffset] to the preceding `:`. Used by
+   * the scoring engine to determine the expected token role.
+   * `null` when the property name cannot be determined (complex expressions,
+   * SCSS maps, etc.).
+   */
+  readonly cssProperty: string | null;
 }
 
 type int = number;
@@ -75,14 +83,10 @@ export function findLiterals(text: string): Hit[] {
     if (isInsideFallback(start, fallbackRanges)) return null;
     if (kind !== "COLOR" && WHITELIST.has(raw[0].toLowerCase())) return null;
     const end = start + raw[0].length;
-    // Expand first so the declaration check sees the wrapper's left
-    // edge (`rem-calc(`) — that way `$x: rem-calc(14px)` correctly
-    // counts as a token declaration even though the literal `14px` is
-    // not directly after the `:`. Without this, the panel would offer
-    // to replace `rem-calc(14px)` with `var(--x)` — a circular ref.
     const hit = expandWrapper(text, raw[0], start, end, kind);
     if (isTokenDeclarationValue(text, hit.replaceStart)) return null;
-    return hit;
+    const cssProperty = extractCssProperty(text, hit.replaceStart);
+    return { ...hit, cssProperty };
   };
 
   for (const m of text.matchAll(HEX_REGEX)) {
@@ -134,6 +138,43 @@ export function findLiterals(text: string): Hit[] {
  * Filtering them would also break the wrapper-expansion replacement
  * story.
  */
+// ─── CSS property extraction ────────────────────────────────────────────────
+
+/**
+ * Walk backward from [startOffset] (the start of the replace range,
+ * i.e. including any wrapper like `rem-calc(`) to find the CSS property
+ * name that precedes the colon separator.
+ *
+ * We skip over whitespace and the colon, then read back an identifier
+ * that matches `[a-z][a-z0-9-]*` (CSS property names). Stops at `{`, `;`,
+ * newline or start-of-string to avoid crossing rule boundaries.
+ *
+ * Returns `null` when the pattern cannot be found (e.g. inside a SCSS map,
+ * multiline shorthand, or template interpolation).
+ */
+function extractCssProperty(source: string, startOffset: number): string | null {
+  let i = startOffset - 1;
+  // Skip whitespace before the literal (and before any `(` wrapper).
+  while (i >= 0 && /[\s()]/.test(source[i])) i--;
+  // Expect a colon.
+  if (i < 0 || source[i] !== ":") return null;
+  i--;
+  // Skip whitespace after the property name.
+  while (i >= 0 && source[i] === " ") i--;
+  // Read the property name backward (CSS props are [a-zA-Z0-9-]).
+  const nameEnd = i + 1;
+  while (i >= 0 && /[a-zA-Z0-9-]/.test(source[i])) i--;
+  const nameStart = i + 1;
+  if (nameStart === nameEnd) return null;
+  const prop = source.substring(nameStart, nameEnd);
+  // Sanity check: CSS property names start with a letter (or `-` for vendor).
+  if (!/^-?[a-zA-Z]/.test(prop)) return null;
+  // Reject SCSS/CSS variable declarations (`--foo:` or `$foo:`).
+  if (prop.startsWith("--")) return null;
+  return prop.toLowerCase();
+}
+
+
 function isTokenDeclarationValue(text: string, offset: number): boolean {
   let i = offset - 1;
   // (1) Optionally skip a single opening quote (`"`, `'`, or
@@ -195,6 +236,7 @@ function expandWrapper(
     replaceStart: start,
     replaceEndExclusive: end,
     replaceText: value,
+    cssProperty: null, // filled in by the caller after expansion
   };
 
   // Walk back: only whitespace, then `(`, then a recognised wrapper name.

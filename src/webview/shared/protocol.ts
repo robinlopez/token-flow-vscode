@@ -161,7 +161,12 @@ export type Axis =
   | "SEMANTIC_COHERENCE"
   | "USAGE_COVERAGE"
   | "DUPLICATION"
-  | "HARDCODED_PRESSURE"
+  // Hardcoded literals split into two axes (parity with IntelliJ #19):
+  //   • OPPORTUNITY — repeated literal with NO matching token (design gap)
+  //   • DEBT        — literal whose token already exists (actionable fix)
+  // The legacy HARDCODED_PRESSURE axis is replaced by these two.
+  | "HARDCODED_OPPORTUNITY"
+  | "HARDCODED_DEBT"
   | "REFERENCE_INTEGRITY";
 
 export interface WireSubScore {
@@ -208,6 +213,23 @@ export interface WireHardcodedCluster {
   readonly literal: string;
   readonly category: TokenCategory | null;
   readonly matchingTokenName: string | null;
+  readonly occurrences: readonly WireHardcodedOccurrence[];
+}
+
+/**
+ * Actionable-debt row: literal that already has a matching token in
+ * the design system, grouped by `(literal + category)`. Mirror of
+ * IntelliJ's `HardcodedValue`.
+ *
+ * `suggestedTokenName` is the most relevant existing token to apply.
+ * The webview renders it next to the literal so the user knows what
+ * the quick-fix would inject.
+ */
+export interface WireHardcodedValue {
+  readonly literal: string;
+  readonly category: TokenCategory | null;
+  readonly suggestedTokenName: string | null;
+  readonly suggestedTokenValue: string | null;
   readonly occurrences: readonly WireHardcodedOccurrence[];
 }
 
@@ -261,6 +283,8 @@ export interface WireAnalysisReport {
   readonly incoherences: readonly WireIncoherence[];
   readonly duplicateClusters: readonly WireDuplicateCluster[];
   readonly hardcodedClusters: readonly WireHardcodedCluster[];
+  /** Actionable-debt rows: literals whose token already exists. */
+  readonly hardcodedValues: readonly WireHardcodedValue[];
   readonly coverage: WireCoverage;
   readonly brokenReferences: readonly WireBrokenReference[];
   readonly unusedTokens: readonly WireTokenLocation[];

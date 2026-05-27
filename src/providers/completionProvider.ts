@@ -1,7 +1,10 @@
 // MVP completion. Suggests tokens after `var(--` (any CSS-flavoured file)
-// and after `$` (SCSS/SASS). The IntelliJ side does smart-category boosting
-// based on the surrounding CSS property — left out of v0.1.0 to keep this
-// thin; the simple sort-by-name already feels right in practice.
+// and after `$` (SCSS/SASS). The sort order now uses the multi-criteria
+// semantic scorer from `model/semantics.ts` so that contextual tokens
+// (Semantic tier, correct role) surface before primitives and role conflicts.
+//
+// The CSS property is extracted from the current line prefix so that, for
+// example, `background: var(--` ranks SURFACE tokens above CONTENT tokens.
 //
 // Trigger characters are declared in `extension.ts` when this provider is
 // registered (one registration per language so the trigger set can differ
@@ -11,6 +14,12 @@ import * as vscode from "vscode";
 import { DesignToken } from "../model/designToken";
 import { TokenScanner } from "../scanner/tokenScanner";
 import { ActiveScopeTracker } from "../services/activeScopeTracker";
+import {
+  getExpectedRoleForProperty,
+  scoreCandidate,
+  scoreToSortText,
+  ScoreContext,
+} from "../model/semantics";
 
 export class TokenCompletionProvider implements vscode.CompletionItemProvider {
   constructor(
@@ -28,11 +37,19 @@ export class TokenCompletionProvider implements vscode.CompletionItemProvider {
     const trigger = detectTrigger(linePrefix, document.languageId);
     if (!trigger) return null;
 
+    // Extract the CSS property name from the current line (e.g. `background`)
+    // so we can weight token roles accordingly.
+    const cssProperty = extractPropertyFromLine(linePrefix);
+    const expectedRole = cssProperty
+      ? getExpectedRoleForProperty(cssProperty)
+      : null;
+
     const tokens = await this.scanner.scan();
     const active = this.scopes.activeNames();
+
     return tokens
       .filter((t) => active.has(t.scope) && matchesTrigger(t, trigger))
-      .map((t) => buildItem(t, trigger));
+      .map((t) => buildItem(t, trigger, { expectedRole }));
   }
 }
 
@@ -66,6 +83,21 @@ function detectTrigger(linePrefix: string, languageId: string): Trigger | null {
   return null;
 }
 
+/**
+ * Extract the CSS property name from the current line prefix.
+ * Looks for `<property-name>:` before `var(`. Returns `null` when the
+ * property cannot be determined (e.g. complex shorthands).
+ */
+function extractPropertyFromLine(linePrefix: string): string | null {
+  // Match `  background-color: var(--` or `  color: var(--`
+  const m = linePrefix.match(/([a-zA-Z][a-zA-Z0-9-]*)\s*:(?:[^;{]*)$/);
+  if (!m) return null;
+  const prop = m[1].toLowerCase();
+  // Reject pseudo-matches like `--my-var: var(--` (CSS custom property decl)
+  if (prop.startsWith("--")) return null;
+  return prop;
+}
+
 function matchesTrigger(token: DesignToken, trigger: Trigger): boolean {
   if (trigger.kind === "CSS_VAR") {
     return token.kind === "CSS_CUSTOM_PROPERTY";
@@ -78,26 +110,26 @@ function matchesTrigger(token: DesignToken, trigger: Trigger): boolean {
 function buildItem(
   token: DesignToken,
   trigger: Trigger,
+  ctx: ScoreContext,
 ): vscode.CompletionItem {
-  // The item's insertion text drops the trigger prefix VSCode already typed
-  // for us. For CSS_VAR the trigger is `var(--`; for SCSS the trigger is
-  // `$`. The label is the bare token name so fuzzy filter behaves well.
   const bareName =
     trigger.kind === "CSS_VAR"
       ? token.name.replace(/^--/, "")
       : token.name.replace(/^\$/, "");
-  const item = new vscode.CompletionItem(
-    bareName,
-    completionKindFor(token),
-  );
+
+  const item = new vscode.CompletionItem(bareName, completionKindFor(token));
   item.detail = token.resolvedValue;
   item.documentation = new vscode.MarkdownString(
     `\`${token.category.toLowerCase()}\` · \`${token.resolvedValue}\``,
   );
   item.insertText = bareName;
-  // Sort tokens alphabetically — matches the IntelliJ v0.1.2 choice
-  // (`CandidateSorter` removed, alphabetical by name).
-  item.sortText = bareName;
+
+  // Use the semantic score as sortText so contextually relevant tokens
+  // surface first. scoreToSortText converts the signed score to a
+  // zero-padded 4-char string that VSCode can sort lexicographically.
+  const score = scoreCandidate(token, ctx);
+  item.sortText = scoreToSortText(score);
+
   return item;
 }
 

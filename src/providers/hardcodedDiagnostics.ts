@@ -16,26 +16,17 @@
 
 import * as vscode from "vscode";
 import { TokenScanner } from "../scanner/tokenScanner";
-import { findLiterals, Hit, LiteralKind } from "../scanner/literalFinder";
-import { DesignToken, TokenCategory } from "../model/designToken";
+import { findLiterals, Hit } from "../scanner/literalFinder";
+import { DesignToken } from "../model/designToken";
 import { ActiveScopeTracker } from "../services/activeScopeTracker";
 import { isFileExcluded, readScopes } from "../settings/scopes";
+import { getExpectedRoleForProperty } from "../model/semantics";
+import { findSuggestions, TokenSuggestion } from "../scanner/findSuggestions";
 
 const SUPPORTED_LANGUAGES = ["scss", "sass", "css", "less"] as const;
 
 /** Documents/changes are coalesced within this window before re-running the scan. */
 const DEBOUNCE_MS = 250;
-
-/**
- * Candidate categories per literal kind. A `LENGTH` literal may match
- * a token indexed as SPACING (most common), RADIUS or TYPOGRAPHY — we
- * surface all three so the user picks the semantically right one.
- */
-const KIND_TO_CATEGORIES: Record<LiteralKind, readonly TokenCategory[]> = {
-  COLOR: ["COLOR"],
-  LENGTH: ["SPACING", "RADIUS", "TYPOGRAPHY"],
-  DURATION: ["DURATION"],
-};
 
 export class HardcodedDiagnostics implements vscode.Disposable {
   private readonly collection = vscode.languages.createDiagnosticCollection(
@@ -104,21 +95,26 @@ export class HardcodedDiagnostics implements vscode.Disposable {
       return;
     }
     const index = await this.scanner.getValueIndex();
+    const allTokens = await this.scanner.scan();
     const text = doc.getText();
     const hits = findLiterals(text);
-    // Two filters: active-scope membership keeps the suggestions
-    // honest about which tokens resolve in this file, and the external
-    // flag drops third-party-library tokens (whitelist entries) from
-    // the replacement set.
+    // Active-scope membership keeps the suggestions honest about which
+    // tokens resolve in this file. `findSuggestions` already filters
+    // `external` tokens via the `excludeExternal` flag.
     const active = this.scopes.activeNames();
+    const scopedTokens = allTokens.filter((t) => active.has(t.scope));
 
     const diagnostics: vscode.Diagnostic[] = [];
     for (const hit of hits) {
-      const matches = index
-        .lookupAcross(hit.text, KIND_TO_CATEGORIES[hit.kind])
-        .filter((t) => active.has(t.scope) && !t.external);
-      if (matches.length === 0) continue;
-      diagnostics.push(buildDiagnostic(doc, hit, matches));
+      const expectedRole = hit.cssProperty
+        ? getExpectedRoleForProperty(hit.cssProperty)
+        : null;
+      const suggestions = findSuggestions(hit, index, scopedTokens, {
+        expectedRole,
+        excludeExternal: true,
+      });
+      if (suggestions.length === 0) continue;
+      diagnostics.push(buildDiagnostic(doc, hit, suggestions));
     }
     this.collection.set(doc.uri, diagnostics);
   }
@@ -127,8 +123,9 @@ export class HardcodedDiagnostics implements vscode.Disposable {
 function buildDiagnostic(
   doc: vscode.TextDocument,
   hit: Hit,
-  matches: readonly DesignToken[],
+  suggestions: readonly TokenSuggestion[],
 ): vscode.Diagnostic {
+  const matches = suggestions.map((s) => s.token);
   // Highlight the inner literal (the part the user actually typed) — even
   // when the replace range covers a wrapper like `rem-calc(14px)`. The
   // wrapper expansion stays available on the diagnostic via `code` so the

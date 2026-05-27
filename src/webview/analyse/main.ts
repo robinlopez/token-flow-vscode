@@ -19,6 +19,7 @@ import type {
   WireDuplicateCluster,
   WireHardcodedCluster,
   WireHardcodedOccurrence,
+  WireHardcodedValue,
   WireIncoherence,
   WireScopeState,
   WireSubScore,
@@ -34,7 +35,9 @@ const vscode = acquireVsCodeApi();
 
 const SECTION_HELP = {
   HARDCODED:
-    "Literal values repeated across the codebase. Click a row to expand the per-occurrence table and jump to any hit.",
+    "Literal values repeated across the codebase with NO matching token in the active scope — design opportunities. Click a row to expand the per-occurrence table and jump to any hit.",
+  HARDCODED_VALUES:
+    "Literal values whose token already exists in the active scope — actionable technical debt. Each row carries the most relevant token to apply.",
   BROKEN_REF:
     "References to tokens that do not exist in your design system. Usually a typo or a deleted token still in use.",
   UNUSED:
@@ -110,6 +113,12 @@ function render(report: WireAnalysisReport): void {
       count: report.hardcodedClusters.length,
       help: SECTION_HELP.HARDCODED,
       body: () => hardcodedBody(report.hardcodedClusters),
+    }),
+    accordionSection({
+      title: "Hardcoded values",
+      count: report.hardcodedValues.length,
+      help: SECTION_HELP.HARDCODED_VALUES,
+      body: () => hardcodedValuesBody(report.hardcodedValues),
     }),
     accordionSection({
       title: "Broken references",
@@ -340,8 +349,10 @@ function axisLabel(axis: WireSubScore["axis"]): string {
       return "Usage coverage";
     case "DUPLICATION":
       return "Duplication";
-    case "HARDCODED_PRESSURE":
-      return "Hardcoded pressure";
+    case "HARDCODED_OPPORTUNITY":
+      return "Hardcoded opportunity";
+    case "HARDCODED_DEBT":
+      return "Hardcoded debt";
     case "REFERENCE_INTEGRITY":
       return "Reference integrity";
   }
@@ -422,6 +433,57 @@ function hardcodedClusterRow(cluster: WireHardcodedCluster): HTMLElement {
   const body = document.createElement("div");
   body.className = "cluster__body";
   for (const occ of cluster.occurrences) body.appendChild(occurrenceRow(occ));
+
+  let expanded = false;
+  const apply = () => {
+    row.dataset.expanded = expanded ? "true" : "false";
+  };
+  apply();
+  header.addEventListener("click", () => {
+    expanded = !expanded;
+    apply();
+  });
+
+  row.append(header, body);
+  return row;
+}
+
+function hardcodedValuesBody(
+  values: readonly WireHardcodedValue[],
+): HTMLElement {
+  if (values.length === 0) {
+    return emptyState("No literal usages of an already-tokenised value.");
+  }
+  return truncatedList(values, CLUSTER_LIMIT, (v) => hardcodedValueRow(v));
+}
+
+function hardcodedValueRow(value: WireHardcodedValue): HTMLElement {
+  // Same shape as hardcodedClusterRow but the header carries the
+  // suggested token instead of an "no match" note. The body lists
+  // the per-occurrence rows so the user can jump-and-fix.
+  const row = document.createElement("div");
+  row.className = "cluster cluster--value";
+
+  const header = document.createElement("button");
+  header.type = "button";
+  header.className = "cluster__header";
+  const suggested = value.suggestedTokenName
+    ? ` · <span class="cluster__match">apply token <code>${escape(value.suggestedTokenName)}</code>${
+        value.suggestedTokenValue
+          ? ` <span class="cluster__match-value">(${escape(value.suggestedTokenValue)})</span>`
+          : ""
+      }</span>`
+    : "";
+  header.innerHTML = `
+    <span class="cluster__chevron">▸</span>
+    <code class="cluster__literal">${escape(value.literal)}</code>
+    <span class="cluster__sep">—</span>
+    <span class="cluster__count"><b>${value.occurrences.length}</b> occurrence(s)</span>
+    ${suggested}`;
+
+  const body = document.createElement("div");
+  body.className = "cluster__body";
+  for (const occ of value.occurrences) body.appendChild(occurrenceRow(occ));
 
   let expanded = false;
   const apply = () => {

@@ -46,7 +46,9 @@
           "description": "Named scopes. Each scope groups source paths under a rootPath; when the active file is inside a scope's rootPath, that scope's tokens (plus every common scope) are proposed. An empty list falls back to tokenFlow.sourcePaths as an implicit common scope.",
           "items": {
             "type": "object",
-            "required": ["name"],
+            "required": [
+              "name"
+            ],
             "properties": {
               "name": {
                 "type": "string",
@@ -59,19 +61,25 @@
               },
               "sourcePaths": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "default": [],
                 "description": "Files and folders containing the tokens (Source of Truth)."
               },
               "whitelistPaths": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "default": [],
                 "description": "Files whose variables are external/known — won't be flagged as broken refs nor proposed as hardcoded-replacement candidates."
               },
               "excludedPaths": {
                 "type": "array",
-                "items": { "type": "string" },
+                "items": {
+                  "type": "string"
+                },
                 "default": [],
                 "description": "Folders/files inside the root to skip during analysis (e.g. unrelated sub-modules)."
               }
@@ -80,7 +88,9 @@
         },
         "tokenFlow.sourcePaths": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Back-compat fallback for when tokenFlow.scopes is empty — treated as the source paths of an implicit common scope. New projects should prefer tokenFlow.scopes."
         },
@@ -91,7 +101,10 @@
         },
         "tokenFlow.alternatives.pickerStyle": {
           "type": "string",
-          "enum": ["webviewBeside", "completion"],
+          "enum": [
+            "webviewBeside",
+            "completion"
+          ],
           "default": "webviewBeside",
           "enumDescriptions": [
             "Custom webview opened in the side column — richer visuals (large swatches, real group dividers), auto-closes when focus moves back to the editor.",

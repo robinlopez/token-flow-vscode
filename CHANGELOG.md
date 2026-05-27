@@ -2,7 +2,37 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](https://semver.org/).
 
-## [0.1.2] — 2026-05-23
+## [0.1.2] — 2026-05-24
+
+### Added
+- **Multi-criteria Semantic Scoring** — The suggestion engine now ranks candidates based on structural Tiers (Semantic > Component > Primitive) and semantic Roles (Surface, Content, Stroke, Effect) inferred from the surrounding CSS property context, rather than falling back to naive name-length sorting.
+- **Analyser — hardcoded results split into clusters + values** (parity with IntelliJ [#19](https://github.com/robinlopez/token-flow/issues/19)) — the legacy "Hardcoded clusters" section is now two sections:
+  - *Hardcoded clusters* keeps the original semantic: repeated literals with **no** matching token in the active scope (design opportunities).
+  - *Hardcoded values* is new: literals where one or more tokens already exist for the same `(value, category)` pair (actionable technical debt). Values are grouped by `(literal + property family)` so the same value used under two distinct properties (`12px padding` vs `12px font-size`) shows up as two separate rows with their own role-aware suggestion from the unified `findSuggestions` engine.
+  - The previous single `HARDCODED_PRESSURE` score axis is replaced by `HARDCODED_OPPORTUNITY` (weight 15, x1 per hit) and `HARDCODED_DEBT` (weight 10, x2 per hit — the fix is immediate).
+  - New `categoryForCssProperty` helper resolves the property → category mapping (padding/margin/gap → SPACING, font-size/line-height → TYPOGRAPHY, border-radius → RADIUS, width/height → SIZING, etc.) so the bucketing matches the IntelliJ taxonomy.
+- **Suggestion engine parity with IntelliJ** — `SuggestionEngine.kt` (Kotlin) is now the authoritative spec per `SHARED_LOGIC.md` and the VSCode side is a faithful port:
+  - **Unified `findSuggestions()` entry point** — single function called by `HardcodedDiagnostics`, the Hardcoded panel aggregator, and the Analyser workspace aggregator. Replaces the previous three-call combo (`lookupAcross` + `sortCandidates` + manual helper concat) that had drifted between callers.
+  - **Cross-family demotion (+200)** — a TYPOGRAPHY-categorised token can no longer outrank a SPACING token on a `padding: 12px` declaration when no exact SPACING match exists. Wrong-family hits surface only as last-resort fuzzy hints.
+  - **Typography-name guard** — a token literally named `--size-typography-title-md` no longer surfaces on `width: 20px` even if its declared category is SIZING. Word-boundary regex (`typography|font|text|weight|leading|…`) catches the canonical pitfall.
+  - **Color-distance fallback** — when no exact COLOR match exists, tokens within RGBA Δ ≤ 0.05 are now surfaced, sorted by colour proximity primary and semantic score secondary. Previously diagnostics simply showed no suggestion at all.
+  - **Role markers aligned to IntelliJ** — added `canvas` (SURFACE), `label` (CONTENT), `divider` (STROKE), `focus` / `glow` (EFFECT). Removed `ring`, `blur`, `filter`, `overlay` markers that had no Kotlin counterpart.
+  - **Tier prefix list aligned** — added `unit` (singular), `primitives` (plural), `component`, `components` to match Kotlin segment list.
+  - **JS-object-path tokens classified correctly** — tier extraction now splits on both `-` and `.`, so a `primitive.units.xl` JS token is recognised as PRIMITIVE rather than silently falling through to SEMANTIC.
+  - **Bug fix — SCSS sigil stripping** — the previous `/^(--|\$)/` regex had an escaping bug (`\$` interpreted as a literal backslash) so `$units-xl` was never normalised. Tier and role extraction silently mis-scored every SCSS token.
+
+### Performance & Stability
+- **In-flight scan dedup** — concurrent callers (multiple visible editors firing diagnostics in parallel after an invalidation) now await a SINGLE shared scan instead of triggering N redundant workspace passes. Eliminates a known cause of compounded freezes on multi-editor sessions.
+- **Generation guard against stale cache writes** — a scan that raced an `invalidate()` will no longer commit its outdated result over the fresh cache.
+- **File watcher debounce (300ms)** — save-all bursts (formatters, multi-file refactors, branch switches) now coalesce into a single index invalidation instead of N consecutive rescans.
+- **Scope-aware JS/TS watcher** — the `**/*.{ts,tsx,js,jsx,mjs,cjs,json}` watcher used to fire on every component save anywhere in the workspace. It now watches ONLY paths declared by configured scopes (`sourcePaths` / `rootPath` / `whitelistPaths`). Stylesheets keep their broad watch since they are typically thin and bounded.
+- **No-scope mode is stylesheets-only** — when no scope is configured, the scanner no longer crawls every `.tsx` file in the workspace. JS/TS/JSON token catalogues now require explicit scope configuration. This was the dominant cause of the "98% CPU UNRESPONSIVE extension host" freezes on React projects.
+- **Default heavy-directory excludes everywhere** — `node_modules`, `dist`, `out`, `build`, `coverage`, `.next`, `.nuxt`, `.git`, `.cache`, `.turbo`, `.parcel-cache`, `target` are now excluded from every `findFiles` call, not just the legacy no-scope fallback.
+- **Per-file mtime cache** — `runScan()` now keeps a `fsPath → {mtime, text, rawTokens}` map that survives `invalidate()`. Unchanged files pay only a `stat()` on subsequent scans instead of a full `readFile` + regex pass; orphaned entries are pruned at the end of each scan.
+- **Parallel file reads + cooperative yield** — files are read in batches of 16 in parallel; the scanner yields to the event loop every 50 files so keystrokes and commands stay responsive during a workspace-wide scan. Mid-scan invalidations bail out early.
+
+
+## [0.1.1] — 2026-05-23
 
 ### Added
 - **DynamicCssVarIndex** — global indexing of contextual CSS variables across the workspace (`CSS`, `SCSS`, `Vue`, `React`, `Angular`).
