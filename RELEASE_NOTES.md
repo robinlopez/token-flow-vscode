@@ -1,6 +1,23 @@
 # Token Flow — Release Notes
 
-## v0.1.2 — 2026-05-24 · Semantic Scoring Engine + Stability Pass + IntelliJ Parity
+## v0.1.2 — 2026-05-24 · Semantic Scoring Engine + Stability Pass + IntelliJ Parity + Analyser Split
+
+### Analyser — Hardcoded clusters & values, split
+
+The single "Hardcoded clusters" section is now two complementary views, mirroring IntelliJ [#19](https://github.com/robinlopez/token-flow/issues/19):
+
+- **Hardcoded clusters** — repeated literals with NO matching token in the active scope. These are **design opportunities** — values worth promoting into the design system.
+- **Hardcoded values** *(new)* — literals whose token already exists for the same `(value, category)` pair. These are **actionable debt** — the fix is mechanical, the user just needs to apply the existing token.
+
+Values are bucketed by `(literal + property family)`. The same `12px` used as `padding` and as `font-size` shows up as two distinct rows, each carrying the most relevant suggestion (`--spacing-sm` vs `--text-sm-line-height`) from the unified suggestion engine.
+
+The legacy `HARDCODED_PRESSURE` score axis is replaced by:
+- `HARDCODED_OPPORTUNITY` (weight 15, x1 per hit)
+- `HARDCODED_DEBT` (weight 10, x2 per hit — the fix is immediate, the penalty is sharper)
+
+---
+
+
 
 - **Multi-criteria Semantic Scoring**: The suggestion engine now natively understands your CSS property context (e.g. `background-color`, `padding`). It ranks design token candidates based on structural **Tiers** (Semantic vs Component vs Primitive) and semantic **Roles** (Surface, Content, Stroke, Effect).
 - **Intelligent Contextual Suggestions**: For a hardcoded `32px` value in a `padding` rule, the engine will prioritize `--spacing-xl` over `--units-xl`. For `#005bff` in a `background`, a token like `--color-surface-high` will easily outrank a `--color-text-brand` token, delivering exactly the right token for the context.

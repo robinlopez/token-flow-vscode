@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](
 
 ### Added
 - **Multi-criteria Semantic Scoring** — The suggestion engine now ranks candidates based on structural Tiers (Semantic > Component > Primitive) and semantic Roles (Surface, Content, Stroke, Effect) inferred from the surrounding CSS property context, rather than falling back to naive name-length sorting.
+- **Analyser — hardcoded results split into clusters + values** (parity with IntelliJ [#19](https://github.com/robinlopez/token-flow/issues/19)) — the legacy "Hardcoded clusters" section is now two sections:
+  - *Hardcoded clusters* keeps the original semantic: repeated literals with **no** matching token in the active scope (design opportunities).
+  - *Hardcoded values* is new: literals where one or more tokens already exist for the same `(value, category)` pair (actionable technical debt). Values are grouped by `(literal + property family)` so the same value used under two distinct properties (`12px padding` vs `12px font-size`) shows up as two separate rows with their own role-aware suggestion from the unified `findSuggestions` engine.
+  - The previous single `HARDCODED_PRESSURE` score axis is replaced by `HARDCODED_OPPORTUNITY` (weight 15, x1 per hit) and `HARDCODED_DEBT` (weight 10, x2 per hit — the fix is immediate).
+  - New `categoryForCssProperty` helper resolves the property → category mapping (padding/margin/gap → SPACING, font-size/line-height → TYPOGRAPHY, border-radius → RADIUS, width/height → SIZING, etc.) so the bucketing matches the IntelliJ taxonomy.
 - **Suggestion engine parity with IntelliJ** — `SuggestionEngine.kt` (Kotlin) is now the authoritative spec per `SHARED_LOGIC.md` and the VSCode side is a faithful port:
   - **Unified `findSuggestions()` entry point** — single function called by `HardcodedDiagnostics`, the Hardcoded panel aggregator, and the Analyser workspace aggregator. Replaces the previous three-call combo (`lookupAcross` + `sortCandidates` + manual helper concat) that had drifted between callers.
   - **Cross-family demotion (+200)** — a TYPOGRAPHY-categorised token can no longer outrank a SPACING token on a `padding: 12px` declaration when no exact SPACING match exists. Wrong-family hits surface only as last-resort fuzzy hints.
