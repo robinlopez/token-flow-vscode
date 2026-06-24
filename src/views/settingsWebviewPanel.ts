@@ -32,6 +32,7 @@ import {
   mergeScopes,
 } from "../settings/scopeConfigIO";
 import { buildWebviewHtml } from "./webviewHtml";
+import { detectScopes } from "../settings/autoScopeDetector";
 
 interface MutableScope {
   name: string;
@@ -188,6 +189,9 @@ class SettingsPanel {
       case "updatePreference":
         await this.writePreference(msg.key, msg.value);
         return;
+      case "autoDetectScopes":
+        await this.runAutoDetect();
+        return;
       case "openKeybindings":
         // The `@ext:` query targets all commands contributed by our
         // extension id — same syntax as the search box in the Keyboard
@@ -294,6 +298,108 @@ class SettingsPanel {
     });
     vscode.window.showInformationMessage(
       `Token Flow: imported ${incoming.length} scope(s) from ${vscode.workspace.asRelativePath(uri)}.`,
+    );
+  }
+
+  // ─── Auto-detect ─────────────────────────────────────────────────────
+
+  /**
+   * Heuristic scope detection. Always confirms via a modal before
+   * touching settings — auto-detection is opinionated and the user must
+   * know they're getting a "best effort" result they should review.
+   * Merges by scope name (case-insensitive); never removes user scopes.
+   */
+  private async runAutoDetect(): Promise<void> {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!ws) {
+      this.send({ type: "autoDetectFailed", reason: "No workspace folder open." });
+      return;
+    }
+    const confirm = await vscode.window.showInformationMessage(
+      "Auto-scope detect",
+      {
+        modal: true,
+        detail:
+          "Token Flow will scan your workspace and add a scope per UI project " +
+          "it finds (one per package.json with a frontend framework), pointing " +
+          "at the design-token files inside.\n\n" +
+          "Tip — a quick review of the result usually adds or removes a couple of " +
+          "paths and noticeably sharpens later scans.",
+      },
+      "Run detection",
+    );
+    if (confirm !== "Run detection") {
+      this.send({ type: "autoDetectFailed", reason: "Cancelled." });
+      return;
+    }
+
+    let detected;
+    try {
+      detected = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Token Flow: detecting scopes…",
+          cancellable: false,
+        },
+        () => detectScopes(ws),
+      );
+    } catch (e) {
+      const msg = (e as Error).message ?? String(e);
+      vscode.window.showErrorMessage(`Token Flow: auto-detect failed — ${msg}`);
+      this.send({ type: "autoDetectFailed", reason: msg });
+      return;
+    }
+
+    if (detected.length === 0) {
+      vscode.window.showInformationMessage(
+        "Token Flow: no token files detected. Add a scope manually to point " +
+          "at your design-tokens source.",
+      );
+      this.send({ type: "autoDetectResult", detected: 0, added: 0, merged: 0 });
+      return;
+    }
+
+    let added = 0;
+    let merged = 0;
+    await this.mutate((scopes) => {
+      for (const d of detected) {
+        const existing = scopes.find(
+          (s) => s.name.toLowerCase() === d.name.toLowerCase(),
+        );
+        if (existing) {
+          for (const p of d.sourcePaths) {
+            if (!existing.sourcePaths.includes(p)) existing.sourcePaths.push(p);
+          }
+          for (const p of d.excludedPaths) {
+            if (!existing.excludedPaths.includes(p)) existing.excludedPaths.push(p);
+          }
+          // Only fill in rootPath when the user left it blank — never
+          // override an explicit choice.
+          if (!existing.rootPath && d.rootPath) existing.rootPath = d.rootPath;
+          merged++;
+        } else {
+          scopes.push({
+            name: d.name,
+            rootPath: d.rootPath,
+            sourcePaths: [...d.sourcePaths],
+            whitelistPaths: [...d.whitelistPaths],
+            excludedPaths: [...d.excludedPaths],
+            externalPrefixes: [],
+          });
+          added++;
+        }
+      }
+    });
+
+    this.send({
+      type: "autoDetectResult",
+      detected: detected.length,
+      added,
+      merged,
+    });
+    vscode.window.showInformationMessage(
+      `Token Flow: detected ${detected.length} scope(s) — ${added} added, ${merged} merged. ` +
+        "Please review the result.",
     );
   }
 

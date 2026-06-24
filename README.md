@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://res.cloudinary.com/doiw6rqul/image/upload/v1779532090/Token%20Flow/token-flow-cover-vs-code.png" alt="Token Flow — VSCode Edition" width="100%"/>
+<img src="https://robinlopez.fr/assets/tokenflow/token-flow-cover-vs-code.png" alt="Token Flow — VSCode Edition" width="100%"/>
 
 # Token Flow — VSCode Edition
 
@@ -43,7 +43,7 @@ chips. Drag any row into the editor to insert the canonical
 
 ## ⚡️ Smart swapping — `Alt+T`
 
-<img src="https://res.cloudinary.com/doiw6rqul/image/upload/v1779532089/Token%20Flow/token-flow-smart-swapping-vs-code.png" alt="Smart swapping with Alt+T" width="100%"/>
+<img src="https://robinlopez.fr/assets/tokenflow/token-flow-smart-swapping-vs-code.png" alt="Smart swapping with Alt+T" width="100%"/>
 
 Pick a sibling token of the same category — swap a `var(--…)` for
 another, or "tokenize" a hardcoded `14px` literal in one keystroke.
@@ -56,7 +56,7 @@ mouse, your choice.
 
 ## 🛟 Smart refactoring — hardcoded value detection
 
-<img src="https://res.cloudinary.com/doiw6rqul/image/upload/v1779532089/Token%20Flow/token-flow-smart-refactoring-vs-code.png" alt="Hardcoded value detection and replacement" width="100%"/>
+<img src="https://robinlopez.fr/assets/tokenflow/token-flow-smart-refactoring-vs-code.png" alt="Hardcoded value detection and replacement" width="100%"/>
 
 Literals that already exist as tokens (`#fff`, `14px`, `200ms`, …)
 get a `Hint`-severity diagnostic with a lightbulb quick-fix that
@@ -70,7 +70,7 @@ Aware of transparent wrappers like `rem-calc(14px)`.
 
 ## 📊 Health audit — Analyse dashboard
 
-<img src="https://res.cloudinary.com/doiw6rqul/image/upload/v1779532088/Token%20Flow/token-flow-health-audit-vs-code.png" alt="Design system health audit dashboard" width="100%"/>
+<img src="https://robinlopez.fr/assets/tokenflow/token-flow-health-audit-vs-code.png" alt="Design system health audit dashboard" width="100%"/>
 
 A full-tab Design System health report. Global score (A→F) on a
 circular gauge, five sub-axes (semantic coherence, usage coverage,
