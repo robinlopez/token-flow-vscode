@@ -2,6 +2,23 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](https://semver.org/).
 
+## [0.1.4] — 2026-06-26
+
+### Added
+- **Copy Token Value** (VS Code port of the IntelliJ v0.2.3 gesture, [#27](https://github.com/robinlopez/token-flow/issues/27)) — a quick action on a token reference that copies its **resolved value**, its **name/reference**, or — for colours — the resolved colour in **HEX / RGB / HSL / OKLCH**.
+  - **Resolves to the primitive.** A semantic alias (`--color-bg-page` → `--color-neutral-100` → `#e5e9eb`) copies `#e5e9eb`, following the same alias-resolution chain as hover / go-to-definition. Works on `var(--x)`, `--x`, `$x`, Style-Dictionary aliases (`'{a.b.c}'`) and runtime property paths (`colors.PRIMARY_500`).
+  - **Three surfaces, one behaviour.** VS Code reserves Ctrl/Cmd+Click for Go-to-Definition and exposes no editor mouse hook, so the IntelliJ "modifier+click → dropdown" becomes: the **`Alt+V` command** (caret-driven QuickPick), an **editor context-menu entry**, and **clickable copy links in the hover popup** (the closest match to the original dropdown).
+  - **Resolved value is the default** — listed first and preselected, so a single confirm copies it. The token name and colour alternates are one keystroke away.
+  - **Colour alternates skip the source format.** A token already resolving to `#e5e9eb` offers RGB / HSL / OKLCH but not HEX again. OKLCH uses Björn Ottosson's sRGB → OKLab transform; all formatters emit `.` as the decimal separator regardless of locale.
+  - **`📋 Copied "…"` status-bar feedback** on every copy.
+  - **Rebindable + toggleable** — change the shortcut from VS Code's Keyboard Shortcuts (search `tokenFlow.copyTokenValue`); disable the whole feature via the new `tokenFlow.copyValue.enabled` setting (default `true`).
+  - **Scope-aware + inert otherwise.** The `Alt+V` keybinding and context-menu entry are gated on a scan-backed `tokenFlow.onTokenReference` context key, so they only light up when the reference under the caret actually resolves to a token in the active scope — they never shadow `Alt+V` on an arbitrary `a.b.c` property access.
+
+### Added (internal)
+- **`ui/colorConversions.ts`** — TypeScript port of `ColorConversions.kt` (`toHex` / `toRgb` / `toHsl` / `toOklch` + `detectFormat`), operating on the canonical `RGBA` from `colorParser.ts`.
+- **`scanner/tokenReferenceAt.ts`** — single source of truth for the five reference shapes recognised under the caret, shared by the new Copy Token Value surfaces.
+- **`scanner/resolveTokenReference.ts`** — shared reference → `DesignToken` resolver (exact / `resolveReference` / reverse mode-strip / suffix), so any reference a hover finds is also copyable.
+
 ## [0.1.3] — 2026-05-27
 
 ### Added

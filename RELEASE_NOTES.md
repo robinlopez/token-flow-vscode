@@ -1,5 +1,54 @@
 # Token Flow — Release Notes
 
+## v0.1.4 — 2026-06-26 · Copy Token Value
+
+### Copy a token's resolved value — without leaving the keyboard
+
+Token Flow now ports the IntelliJ v0.2.3 gesture ([#27](https://github.com/robinlopez/token-flow/issues/27)) to VS Code: a quick action on any token reference that copies its **resolved value**, its **name**, or — for colours — the resolved colour in **HEX / RGB / HSL / OKLCH**.
+
+Place the caret on a `var(--color-bg-page)`, `$spacing-md`, `'{primitive.neutral.100}'` or `colors.PRIMARY_500` and the dropdown opens with the resolved value preselected. Confirm to copy; arrow down for the alternates.
+
+#### Resolves to the primitive
+
+A semantic alias resolves all the way to the value at the end of its chain:
+
+```
+--color-bg-page  →  --color-neutral-100  →  #e5e9eb
+```
+
+Copy Token Value puts `#e5e9eb` on the clipboard — not the intermediate alias. It follows the exact same resolution chain as the hover popup and Go-to-Definition, so anything a hover can show, you can copy.
+
+#### Three ways to reach it
+
+VS Code reserves `Ctrl/Cmd+Click` for Go-to-Definition and gives extensions no hook into editor mouse events, so the IntelliJ "modifier+click → dropdown" becomes three native surfaces, all sharing one behaviour:
+
+- **`Alt+V`** — a caret-driven QuickPick. Rebind it from **Keyboard Shortcuts** (search `tokenFlow.copyTokenValue`), the VS Code-native equivalent of the IntelliJ settings combo.
+- **Editor right-click menu** — a "Copy Token Value…" entry, no keybinding to remember.
+- **Hover popup** — the resolved value, token name and colour formats render as clickable `📋` copy links right under the variant table.
+
+All three light up only when the reference under the caret actually resolves to a token in the active scope (a scan-backed `tokenFlow.onTokenReference` context key), so `Alt+V` and the menu entry stay inert on an arbitrary `a.b.c` property access elsewhere in your code.
+
+#### Colour-aware
+
+When the resolved value is a colour, the dropdown adds the three formats it *isn't* already in. A token resolving to `#e5e9eb` offers:
+
+```
+rgb(229, 233, 235)
+hsl(200deg 13% 91%)
+oklch(0.932 0.005 228.8deg)
+```
+
+OKLCH uses Björn Ottosson's sRGB → OKLab → OKLCH transform. Every format emits `.` as the decimal separator regardless of your system locale.
+
+#### Settings
+
+- **`tokenFlow.copyValue.enabled`** (default `true`) — toggles the command, the context-menu entry and the hover links in one switch.
+- The shortcut is fully rebindable from VS Code's Keyboard Shortcuts UI.
+
+Every copy confirms with a transient `📋 Copied "…"` status-bar message.
+
+---
+
 ## v0.1.3 — 2026-05-27 · Auto-scope detect
 
 ### One-click bootstrap of the Scopes configuration
