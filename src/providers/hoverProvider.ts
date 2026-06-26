@@ -6,6 +6,8 @@ import * as vscode from "vscode";
 import { TokenScanner } from "../scanner/tokenScanner";
 import { buildTokenMarkdown } from "../ui/tokenMarkdown";
 import { ActiveScopeTracker } from "../services/activeScopeTracker";
+import { buildCopyOptions, copyValueEnabled } from "../actions/copyTokenValue";
+import { DesignToken } from "../model/designToken";
 
 export class TokenHoverProvider implements vscode.HoverProvider {
   constructor(
@@ -38,7 +40,25 @@ export class TokenHoverProvider implements vscode.HoverProvider {
 
     const md = new vscode.MarkdownString(buildTokenMarkdown(token), true);
     md.supportHtml = true;
+    // Reproduce the IntelliJ "Copy value" dropdown as a row of clickable
+    // copy links (the most faithful match to the modifier+click → dropdown
+    // UX VS Code can't intercept). `command:` links require `isTrusted`.
+    if (copyValueEnabled()) {
+      appendCopyLinks(md, token);
+    }
     return new vscode.Hover(md, ref.range);
+  }
+}
+
+/** Appends the "Copy value" link block (each row a `tokenFlow.copyText` command link). */
+function appendCopyLinks(md: vscode.MarkdownString, token: DesignToken): void {
+  md.isTrusted = true;
+  md.appendMarkdown("\n\n---\n\n");
+  for (const o of buildCopyOptions(token)) {
+    const arg = encodeURIComponent(JSON.stringify([o.value]));
+    md.appendMarkdown(
+      `📋 [\`${o.value}\`](command:tokenFlow.copyText?${arg} "Copy ${o.label}") — ${o.label}\n\n`,
+    );
   }
 }
 

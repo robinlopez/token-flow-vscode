@@ -228,6 +228,23 @@ Used by the variant table renderer (`VariantTableHtml.kt` →
 - **`currentcolor`**: rendered as a neutral grey placeholder (`#808080`)
   since we can't resolve it without runtime CSS context.
 
+### Output conversions (`ColorConversions.kt` → `ui/colorConversions.ts`)
+
+Used by **Copy Token Value** (§15) to offer a colour in formats other
+than its source.
+
+- **`toHex` / `toRgb` / `toHsl`**: emit the canonical CSS strings;
+  alpha is dropped when opaque (`a == 255`), else appended (`#rrggbbaa`,
+  `rgba(…)`, `hsla(… / a)`).
+- **`toOklch`**: Björn Ottosson's sRGB → OKLab → OKLCH transform
+  (linearise sRGB, the two fixed 3×3 matrices, cube roots, `atan2` for
+  hue). Output `oklch(L C Hdeg)` with L/C at 3 dp, H at 1 dp.
+- **`detectFormat`**: prefix-sniffs `#` / `oklch` / `hsl` / `rgb`;
+  named colours return `null` (no source format → offer all four).
+- **Locale**: JS `Number.toFixed`/`toString` always emit `.`, so unlike
+  Kotlin/Java no explicit locale guard is needed. The shared `trim`
+  helper rounds + drops trailing zeros for every formatter.
+
 ### Cache key (VSCode-only)
 
 Library swatches are cached on disk by their canonical 8-char hex
@@ -496,6 +513,32 @@ the scope-tag attached to a token might shift.
   is **not** indexed by either plugin — references to `var(--x)` in
   stylesheets are detected, but the JS write-site that sets the value
   at runtime is out of scope for static analysis.
+
+## 15. Copy Token Value (issue #27)
+
+Port of the IntelliJ v0.2.3 "Copy resolved value" gesture
+(`CopyTokenValueShower` + `ColorConversions`). Copies the token under
+the caret as its resolved value, name, or — for colours — one of four
+CSS formats.
+
+- **Gesture mapping**: IntelliJ uses `⌘/Ctrl+Shift+Click`; VS Code
+  reserves Ctrl/Cmd+Click for Go-to-Definition and exposes no editor
+  mouse hook, so the port ships **command + keybinding (`Alt+V`) +
+  editor context menu + hover copy links**. See
+  [doc/copy-token-value.md](doc/copy-token-value.md).
+- **Resolution**: same alias chain as hover / go-to-definition —
+  `scanner/resolveTokenReference.ts` (`resolveTokenByReference`) on top
+  of the value the scanner already resolved to the primitive
+  (`DesignToken.resolvedValue`).
+- **Dropdown order** (invariant): **Resolved value** first + preselected,
+  then colour alternates (skipping the source format, §9 output
+  conversions), then the **token name** (`tokenExpression`) when it
+  differs.
+- **Inert when irrelevant**: the keybinding + menu are gated on the
+  scan-backed `tokenFlow.onTokenReference` context key — true only when
+  the reference under the caret resolves to a token in the active scope.
+- **Toggle**: `tokenFlow.copyValue.enabled` (default `true`) gates the
+  command, the menu entry and the hover links.
 
 ---
 

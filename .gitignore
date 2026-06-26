@@ -4,6 +4,7 @@ out/
 .DS_Store
 .vscode-test/
 .idea/
+doc/
 
 # Local-only working files (release notes drafts copy-pasted into VSCode Marketplace UI)
 RELEASE_NOTES_*.md

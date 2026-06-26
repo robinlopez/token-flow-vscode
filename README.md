@@ -90,6 +90,13 @@ source.
 - **Go to Token Declaration** — `Ctrl+Click` / `F12` / Peek on any
   `var(--x)`, `--x` or `$x` reference, via VSCode's native Definition
   flow. Works with stylesheets and TS/JS preset paths.
+- **Copy Token Value** — `Alt+V` (or the editor right-click menu, or a
+  click on the hover popup) on a token reference (`var(--x)`, `$x`,
+  `'{a.b.c}'`, `colors.X`) opens a dropdown to copy its **resolved value**
+  (the primitive at the end of the alias chain), its **token name**, or —
+  for colours — the resolved colour as **HEX / RGB / HSL / OKLCH**. Rebind
+  from VSCode's Keyboard Shortcuts (search `tokenFlow.copyTokenValue`);
+  toggle via `tokenFlow.copyValue.enabled`.
 - **Code completion** — triggered after `var(--` or `$`, sorted
   alphabetically, filtered by VSCode's fuzzy matcher.
 - **Named scopes** — multi-UI projects (mobile / desktop / preset /
@@ -116,5 +123,5 @@ Built by **Robin Lopez** — designer & front-end engineer.
 If Token Flow saves you time, you can support its development:
 
 <a href="https://www.buymeacoffee.com/robinlopez">
-  <img src="https://res.cloudinary.com/doiw6rqul/image/upload/v1778160520/Token%20Flow/buy-coffee-btn.png" alt="Buy Me A Coffee" width="180"/>
+  <img src="https://robinlopez.fr/assets/tokenflow/buy-coffee-btn.png" alt="Buy Me A Coffee" width="180"/>
 </a>

@@ -2,7 +2,7 @@
   "name": "token-flow-vscode",
   "displayName": "Token Flow - Design System",
   "description": "Bridging the gap between Design and Code. Find, insert, swap and audit design tokens (SCSS · CSS · TS/JS) without leaving your editor.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "robin-lopez",
   "license": "MIT",
   "icon": "media/pluginIcon.png",
@@ -111,6 +111,11 @@
             "Native IntelliSense popup floating under the caret — closer to IntelliJ; color swatches via the built-in Color kind, groups conveyed via the right-aligned label description."
           ],
           "description": "How the Alt+T 'Show Token Alternatives' picker is rendered."
+        },
+        "tokenFlow.copyValue.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable 'Copy Token Value' — the Alt+V command, its editor context-menu entry, and the clickable copy links in the hover popup."
         }
       }
     },
@@ -134,6 +139,16 @@
       {
         "command": "tokenFlow.showAlternatives",
         "title": "Show Token Alternatives",
+        "category": "Token Flow"
+      },
+      {
+        "command": "tokenFlow.copyTokenValue",
+        "title": "Copy Token Value…",
+        "category": "Token Flow"
+      },
+      {
+        "command": "tokenFlow.copyText",
+        "title": "Copy Text to Clipboard",
         "category": "Token Flow"
       },
       {
@@ -166,6 +181,12 @@
         "command": "tokenFlow.showAlternatives",
         "key": "alt+t",
         "when": "editorTextFocus && resourceLangId =~ /^(scss|sass|css|less|typescript|typescriptreact|javascript|javascriptreact|json|jsonc)$/"
+      },
+      {
+        "command": "tokenFlow.copyTokenValue",
+        "key": "alt+v",
+        "mac": "alt+v",
+        "when": "editorTextFocus && tokenFlow.onTokenReference"
       }
     ],
     "viewsContainers": {
@@ -223,9 +244,20 @@
           "group": "navigation@0"
         }
       ],
+      "editor/context": [
+        {
+          "command": "tokenFlow.copyTokenValue",
+          "when": "editorTextFocus && tokenFlow.onTokenReference",
+          "group": "9_cutcopypaste"
+        }
+      ],
       "commandPalette": [
         {
           "command": "tokenFlow.revealDeclaration",
+          "when": "false"
+        },
+        {
+          "command": "tokenFlow.copyText",
           "when": "false"
         }
       ]

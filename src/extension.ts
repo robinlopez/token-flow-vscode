@@ -25,6 +25,12 @@ import { openAnalyse } from "./views/analyseWebviewPanel";
 import { openSettingsPanel } from "./views/settingsWebviewPanel";
 import { createScopeStatusBar } from "./views/scopeStatusBar";
 import { showAlternatives } from "./actions/showAlternatives";
+import {
+  copyTokenValue,
+  copyText,
+  copyValueEnabled,
+  findTokenAtCursor,
+} from "./actions/copyTokenValue";
 import { registerAlternativesCompletion } from "./views/alternativesCompletion";
 import { ActiveScopeTracker } from "./services/activeScopeTracker";
 import { DesignToken } from "./model/designToken";
@@ -284,6 +290,21 @@ export function activate(context: vscode.ExtensionContext): void {
       showAlternatives(scanner, dynamicCssVarIndex, scopeTracker, context),
     ),
 
+    // Alt+V — Copy Token Value. Dropdown of resolved value + colour
+    // alternates + token name for the reference under the caret.
+    vscode.commands.registerCommand("tokenFlow.copyTokenValue", () =>
+      copyTokenValue(scanner, scopeTracker),
+    ),
+
+    // Hidden — backs the hover copy links. Args carry a single string:
+    // the text to put on the clipboard.
+    vscode.commands.registerCommand(
+      "tokenFlow.copyText",
+      async (value: unknown) => {
+        if (typeof value === "string") await copyText(value);
+      },
+    ),
+
     // Wires the native-suggest variant of the Alt+T picker. Idle when
     // the user is on the webview style — the provider only emits items
     // while `openAlternativesAsCompletion` is in flight.
@@ -333,6 +354,53 @@ export function activate(context: vscode.ExtensionContext): void {
       openSettingsPanel(context.extensionUri),
     ),
   );
+
+  // ─── Copy Token Value — `onTokenReference` context key ────────────────
+  // Drives the `Alt+V` keybinding + editor context-menu entry: both are
+  // gated on `tokenFlow.onTokenReference` so they stay inert outside a
+  // copyable token (and don't shadow `alt+v` elsewhere). The check is
+  // debounced and scan-backed — the key only flips true when a reference
+  // under the caret resolves to a real token in the active scope, so the
+  // menu item never appears on an arbitrary `a.b.c` property access.
+  const COPY_LANGS = new Set([
+    "scss",
+    "sass",
+    "css",
+    "less",
+    "typescript",
+    "typescriptreact",
+    "javascript",
+    "javascriptreact",
+    "json",
+    "jsonc",
+  ]);
+  let ctxTimer: NodeJS.Timeout | null = null;
+  const refreshOnTokenReference = (): void => {
+    if (ctxTimer) clearTimeout(ctxTimer);
+    ctxTimer = setTimeout(async () => {
+      ctxTimer = null;
+      const editor = vscode.window.activeTextEditor;
+      let on = false;
+      if (
+        editor &&
+        copyValueEnabled() &&
+        COPY_LANGS.has(editor.document.languageId)
+      ) {
+        on = (await findTokenAtCursor(editor, scanner, scopeTracker)) !== null;
+      }
+      void vscode.commands.executeCommand(
+        "setContext",
+        "tokenFlow.onTokenReference",
+        on,
+      );
+    }, 200);
+  };
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection(refreshOnTokenReference),
+    vscode.window.onDidChangeActiveTextEditor(refreshOnTokenReference),
+    { dispose: () => ctxTimer && clearTimeout(ctxTimer) },
+  );
+  refreshOnTokenReference();
 
   // ─── Status bar ───────────────────────────────────────────────────────
   createScopeStatusBar(scopeTracker, context);
