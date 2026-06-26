@@ -1,5 +1,29 @@
 # Token Flow — Release Notes
 
+## v0.1.3 — 2026-05-27 · Auto-scope detect
+
+### One-click bootstrap of the Scopes configuration
+
+Setting up Token Flow on a real codebase used to mean opening the Settings panel, creating a scope, browsing to your `_tokens.scss`, repeating per app, and remembering to skip `node_modules`/`dist`. **Auto-scope detect** does the whole walk for you in a single click.
+
+#### How it works
+
+- Token Flow walks every `package.json` in the workspace (skipping `node_modules`, `dist`, `build`, `out`, `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.cache`, `coverage`) and classifies each as a UI project when it depends on a known frontend framework — React, React Native, Vue, Nuxt, Angular, Svelte, Next, Astro, Solid, Preact, Lit, Stencil, Ember, Ionic, Vite, Tailwind, Sass, styled-components, Emotion, MUI, Chakra, Mantine, Radix, Ant Design, PrimeVue/React/NG, Bootstrap. Packages that don't depend on a framework but ship CSS/SCSS assets are picked up as a fallback (design-token libraries).
+- One **scope** is created per UI project, named after the `package.json#name` (stripped of any `@scope/` prefix), with `rootPath` pointing at the project directory.
+- **Multi-app monorepos work without configuration** — if `apps/desktop/` and `apps/mobile/` are both UI projects under a parent `package.json`, the parent is treated as an implicit container and each sibling gets its own scope. No `workspaces` field required.
+- **Sources** are populated by scanning each project for files that *only* contain token declarations: a strict content heuristic checks for at least 5 `--var:` or `$var:` declarations and no real selectors / mixins / keyframes / media queries (`:root { … }`, `@use`, `@forward` are tolerated). Filename gate accepts the usual token vocabulary plus arbitrary suffixes (`_tokens-metrics.scss`, `_tokens-transitions.scss`, …). Folder gate accepts files dropped inside `tokens/`, `theme/`, `foundations/`, `primitives/`, `design-tokens/`, `design-system/`, `ds/`, `variables/`, `generated/`, `styles/`, `scss/`, `css/`, `sass/`, `less/` — so Style-Dictionary / Theo output emitted under `src/styles/.../generated/` is picked up.
+- **Excludes** ship with `node_modules`, `dist`, `build`, `out`, `coverage` unconditionally, plus `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.cache`, `.angular`, `.parcel-cache`, `.storybook-static`, `.vscode`, `.idea`, `.git`, `tmp`, `temp` when those folders actually exist.
+- **Re-runs are safe.** Auto-detect merges by scope name (case-insensitive): existing sources / excludes are appended to, never overwritten. An explicit `rootPath` is never replaced.
+
+#### Where to find it
+
+- **Empty Settings panel** — a primary "Auto-scope detect" button sits alongside an "Add scope manually" button, replacing the previous lone "Create your first scope" CTA.
+- **Already-populated Settings panel** — "Auto-scope detect" is exposed next to the Scopes section heading.
+
+Each run prompts a quick confirmation before mutating workspace settings and reports back via a top-right toast ("N detected — X added, Y merged"). A review of the result usually adds or removes a couple of paths and noticeably sharpens later scans — but the defaults are tuned to be useful out of the box.
+
+---
+
 ## v0.1.2 — 2026-05-24 · Semantic Scoring Engine + Stability Pass + IntelliJ Parity + Analyser Split
 
 ### Analyser — Hardcoded clusters & values, split

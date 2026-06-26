@@ -2,6 +2,26 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](https://semver.org/).
 
+## [0.1.3] — 2026-05-27
+
+### Added
+- **Auto-scope detect** — one-click bootstrap of the Scopes configuration. The Settings panel can now scan the workspace and create a Token Flow scope per UI project it finds, pre-filled with sources and excludes.
+  - **Discovery via `package.json`** — every package.json in the workspace (skipping `node_modules`, `dist`, `build`, `out`, `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.cache`, `coverage`) is classified as a UI project when it depends on a known frontend framework (React, React Native, Vue, Nuxt, Angular, Svelte, Next, Astro, Solid, Preact, Lit, Stencil, Ember, Ionic, Vite, Tailwind, Sass, styled-components, Emotion, MUI, Chakra, Mantine, Radix, Ant Design, PrimeVue/React/NG, Bootstrap) — or, as a fallback, when it ships any CSS/SCSS/Sass/Less asset. A package whose `name` is namespaced (`@acme/web`) becomes a scope named `web`.
+  - **Implicit-container pruning** — when one detected project sits under another (e.g. `apps/desktop/` and `apps/mobile/` under the repo root), the outer project is treated as a monorepo container and the **siblings each get their own scope**. Containers themselves never become scopes. Works without a `workspaces` field — the topology of the candidate tree is the signal.
+  - **Strict token-file qualification** — sources are populated by qualifying every `.css`/`.scss`/`.sass`/`.less` file as a "token sheet" only when it (a) has at least 5 `--var:` or `$var:` declarations, (b) carries no selectors except `:root { … }` / `:root.foo { … }`, and (c) contains no `@mixin` / `@function` / `@keyframes` / `@media` / `@font-face`. `@use` / `@forward` are tolerated. `.ts`/`.tsx`/`.js`/`.jsx` qualify when they export only value bags with token-vocabulary keys (no JSX, no React/Vue/Angular imports, no hooks, no function bodies).
+  - **Filename + ancestor gate** — only files whose basename matches the token vocabulary (`tokens`, `theme`, `palette`, `variables`, `colors`, `spacing`, `typography`, `metrics`, `transitions`, `durations`, `easings`, `semantics`, `responsive`, `breakpoints`, `shadows`, `radii`, `foundations`, `primitives`, `design-tokens`, …) reach the content heuristic. Files sitting inside a `tokens/`, `theme/`, `palette/`, `foundations/`, `primitives/`, `design-tokens/`, `design-system/`, `ds/`, `variables/`, `generated/`, `styles/`, `scss/`, `css/`, `sass/`, `less/` folder also pass, so Style-Dictionary / Theo output dropped under `src/styles/.../generated/` is picked up.
+  - **Folder collapse** — when ≥ 2 qualifying token files sit in the same directory, the directory itself becomes the source entry instead of every individual file (keeps `settings.json` readable).
+  - **Unconditional noise excludes** — every produced scope ships with `node_modules`, `dist`, `build`, `out`, `coverage` in its excludes list. `.next`, `.nuxt`, `.svelte-kit`, `.turbo`, `.cache`, `.angular`, `.parcel-cache`, `.storybook-static`, `storybook-static`, `.vscode`, `.idea`, `.git`, `tmp`, `temp` are added when they exist at the workspace root.
+  - **Non-destructive merge** — re-running auto-detect on an already-populated configuration merges by scope name (case-insensitive): existing scopes get new sources / excludes appended, never overwritten. An explicit `rootPath` is never replaced.
+  - **Confirmation modal** before any settings write, with a one-line explanation that detection is heuristic and the result is worth a quick review.
+  - **Empty-state CTA** — when no scope exists yet, the Settings panel surfaces an "Auto-scope detect" primary button alongside an "Add scope manually" secondary, replacing the previous lone "Create your first scope" button.
+  - **Inline header action** — when scopes already exist, "Auto-scope detect" is exposed next to the Scopes section heading so users can re-run detection without scrolling.
+  - **Toast feedback** — top-right toast on the Settings panel reports `N detected, X added, Y merged` after each run (or a "no token files detected" notice when the scan came up empty). Auto-dismisses after 5 s; click to dismiss earlier.
+
+### Changed
+- **`SettingsHostMessage` is now a discriminated union** — previously a single `{ type: "config"; … }` shape; the auto-detect flow needs to push `autoDetectResult` / `autoDetectFailed` notifications back to the webview, so the protocol moved to a proper union. The client `message` listener now uses an exhaustive `switch (msg.type)`.
+- **Settings panel — Scopes section header** uses a row layout (`section-header--with-action`) when an action button is attached, so the auto-detect button aligns cleanly with the title without disturbing the existing two-line "title + hint" layout when no action is present.
+
 ## [0.1.2] — 2026-05-24
 
 ### Added

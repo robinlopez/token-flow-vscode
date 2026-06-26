@@ -13,4 +13,15 @@ tsconfig.json
 **/*.ts
 RELEASE_NOTES_*.md
 
+# Internal dev/planning docs — not shipped to users.
+RELEASE_NOTES.md
+AUTO_SCOPE_PLAN.md
+PLAN.md
+DEVELOPMENT.md
+SHARED_LOGIC.md
+doc/**
+.claude/**
+.idea/**
+tsconfig.webview.json
+
 # Keep: out/extension.js, package.json, README.md, CHANGELOG.md, LICENSE, media/

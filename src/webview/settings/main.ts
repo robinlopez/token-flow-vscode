@@ -50,17 +50,36 @@ const state: State = {
 window.addEventListener(
   "message",
   (event: MessageEvent<SettingsHostMessage>) => {
-    if (event.data.type === "config") {
-      state.scopes = event.data.scopes;
-      state.preferences = event.data.preferences;
-      state.workspaceName = event.data.workspaceName;
-      state.noWorkspace = event.data.noWorkspace;
-      // Clamp selection — list might have shrunk between snapshots.
-      if (state.selected >= state.scopes.length) {
-        state.selected = Math.max(0, state.scopes.length - 1);
-      }
-      state.pendingFieldUpdates.clear();
-      render();
+    const msg = event.data;
+    switch (msg.type) {
+      case "config":
+        state.scopes = msg.scopes;
+        state.preferences = msg.preferences;
+        state.workspaceName = msg.workspaceName;
+        state.noWorkspace = msg.noWorkspace;
+        // Clamp selection — list might have shrunk between snapshots.
+        if (state.selected >= state.scopes.length) {
+          state.selected = Math.max(0, state.scopes.length - 1);
+        }
+        state.pendingFieldUpdates.clear();
+        render();
+        return;
+      case "autoDetectResult":
+        if (msg.detected === 0) {
+          showToast("No token files detected — add a scope manually.", "info");
+        } else {
+          showToast(
+            `Detected ${msg.detected} scope(s) — ${msg.added} added, ${msg.merged} merged. Please review.`,
+            "success",
+          );
+        }
+        return;
+      case "autoDetectFailed":
+        // Silent cancel — no toast for the user-initiated "Cancel" path.
+        if (msg.reason !== "Cancelled.") {
+          showToast(`Auto-detect failed: ${msg.reason}`, "error");
+        }
+        return;
     }
   },
 );
@@ -103,7 +122,10 @@ function render(): void {
 
 function buildScopesSectionHeader(): HTMLElement {
   const wrap = document.createElement("div");
-  wrap.className = "section-header";
+  wrap.className = "section-header section-header--with-action";
+
+  const text = document.createElement("div");
+  text.className = "section-header__text";
   const h2 = document.createElement("h2");
   h2.className = "section-header__title";
   h2.textContent = "Scopes";
@@ -111,7 +133,22 @@ function buildScopesSectionHeader(): HTMLElement {
   hint.className = "section-header__hint";
   hint.textContent =
     "Group source-of-truth files per app/area. The active editor's path selects which scopes apply.";
-  wrap.append(h2, hint);
+  text.append(h2, hint);
+  wrap.appendChild(text);
+
+  // Only surface the auto-detect button alongside the header when at
+  // least one scope already exists — the empty-state card carries its
+  // own (larger) auto-detect CTA, so duplicating it here would be noise.
+  if (state.scopes.length > 0) {
+    const auto = secondaryButton("Auto-scope detect", () =>
+      vscode.postMessage({ type: "autoDetectScopes" }),
+    );
+    auto.classList.add("section-header__action");
+    auto.title =
+      "Scan the workspace for design-token files and merge them into the scope list. Review the result afterwards.";
+    wrap.appendChild(auto);
+  }
+
   return wrap;
 }
 
@@ -400,12 +437,32 @@ function buildEmptyState(): HTMLElement {
 
   const body = document.createElement("p");
   body.textContent =
-    "Scopes group source-of-truth files by app/area. Create one to start indexing tokens.";
+    "Scopes group source-of-truth files by app/area. Let Token Flow scan " +
+    "your workspace automatically, or add a scope manually.";
 
-  const cta = primaryButton("+  Create your first scope", () =>
+  const alert = document.createElement("div");
+  alert.className = "settings-alert settings-alert--info";
+  const alertIcon = document.createElement("span");
+  alertIcon.className = "settings-alert__icon";
+  alertIcon.textContent = "ℹ";
+  const alertText = document.createElement("span");
+  alertText.textContent =
+    "Auto-detection adds one scope per UI project (detected from package.json) " +
+    "and points it at the token files it finds inside. A quick review of " +
+    "the result usually improves later scans.";
+  alert.append(alertIcon, alertText);
+
+  const actions = document.createElement("div");
+  actions.className = "settings-empty-card__actions";
+  const auto = primaryButton("Auto-scope detect", () =>
+    vscode.postMessage({ type: "autoDetectScopes" }),
+  );
+  const manual = secondaryButton("Add scope manually", () =>
     vscode.postMessage({ type: "addScope" }),
   );
-  wrap.append(title, body, cta);
+  actions.append(auto, manual);
+
+  wrap.append(title, body, alert, actions);
   return wrap;
 }
 
@@ -732,4 +789,31 @@ function banner(text: string): HTMLElement {
   p.className = "settings-empty";
   p.textContent = text;
   return p;
+}
+
+/**
+ * Tiny top-right toast. Stacks vertically when several fire at once
+ * (rare — the only producer today is the auto-detect flow). Auto-dismisses
+ * after 5s; clicking dismisses immediately.
+ */
+function showToast(
+  message: string,
+  variant: "info" | "success" | "error" = "info",
+): void {
+  let host = document.getElementById("settings-toast-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "settings-toast-host";
+    document.body.appendChild(host);
+  }
+  const toast = document.createElement("div");
+  toast.className = `settings-toast settings-toast--${variant}`;
+  toast.textContent = message;
+  const dismiss = () => {
+    toast.classList.add("settings-toast--leaving");
+    setTimeout(() => toast.remove(), 200);
+  };
+  toast.addEventListener("click", dismiss);
+  host.appendChild(toast);
+  setTimeout(dismiss, 5000);
 }

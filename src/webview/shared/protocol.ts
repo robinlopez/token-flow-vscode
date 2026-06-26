@@ -348,15 +348,32 @@ export interface WirePreferences {
   readonly hoverEnabled: boolean;
 }
 
-export type SettingsHostMessage = {
-  type: "config";
-  scopes: readonly WireScope[];
-  preferences: WirePreferences;
-  /** Human-readable workspace name, surfaced in the panel header. */
-  workspaceName: string | null;
-  /** True when no workspace folder is open — disables the UI with a hint. */
-  noWorkspace: boolean;
-};
+export type SettingsHostMessage =
+  | {
+      type: "config";
+      scopes: readonly WireScope[];
+      preferences: WirePreferences;
+      /** Human-readable workspace name, surfaced in the panel header. */
+      workspaceName: string | null;
+      /** True when no workspace folder is open — disables the UI with a hint. */
+      noWorkspace: boolean;
+    }
+  | {
+      /**
+       * Result of an auto-detect run. The webview surfaces a toast so
+       * the user knows the silent settings mutation happened (the
+       * scopes list will refresh on its own via the next `config`).
+       */
+      type: "autoDetectResult";
+      detected: number;
+      added: number;
+      merged: number;
+    }
+  | {
+      /** Auto-detect couldn't run (no workspace, user cancelled, …). */
+      type: "autoDetectFailed";
+      reason: string;
+    };
 
 export type SettingsClientMessage =
   | { type: "ready" }
@@ -387,6 +404,15 @@ export type SettingsClientMessage =
       type: "updatePreference";
       key: keyof WirePreferences;
       value: string | boolean;
+    }
+  | {
+      /**
+       * Triggers the heuristic auto-detection of scopes. The host
+       * confirms via a modal before mutating settings, scans the
+       * workspace, then merges results into the existing scope list
+       * (additive — never removes user scopes).
+       */
+      type: "autoDetectScopes";
     }
   | {
       /**
