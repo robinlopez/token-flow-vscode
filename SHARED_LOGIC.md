@@ -346,9 +346,19 @@ scalar.
 
 ### VSCode-only differences from IntelliJ
 
-- No `NUMBER_PROP_REGEX` — unitless property values are an RN/CSS-in-JS
-  thing and the VSCode side only inspects stylesheets so far.
-- No `isInsidePartialString` — same reason (JS string literal handling).
+- **`NUMBER_PROP_REGEX` — now ported** (v0.1.4). Unitless property values
+  (`fontSize: 14`, `borderRadius: 8`, `opacity: 0.5`) emit a `NUMBER`-kind
+  hit, matching the IntelliJ `LiteralFinder`. The number must be the sole
+  value of its slot (lookahead `(?=\s*[,;)}\]\n]|\s*$)`), so CSS shorthand
+  (`flex: 1 1 auto`) and unit-bearing values are left out. Named colors
+  (`white`, `transparent`, …) and `//` / `/* */` comment exclusion were
+  ported in the same pass. The category for a `NUMBER` hit comes from the
+  surrounding property (`PropertyContext`-equivalent `categoryForCssProperty`,
+  which uses `startsWith`/`includes` predicates so RN camelCase props map
+  like their hyphenated CSS twins); a context-less bare number stays
+  uncategorised and surfaces only as a repeated-literal cluster.
+- No `isInsidePartialString` — JS string-literal *replacement* nicety
+  (not a detection gap); still out of scope.
 - No `SuggestionEngine` cross-property smartness for **exact-value**
   candidates — they're ordered by their `byNormalized` map order
   (= source order of the primary-token declarations in the scanned

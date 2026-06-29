@@ -57,6 +57,9 @@ const KIND_TO_CATEGORIES: Record<string, readonly TokenCategory[]> = {
   COLOR: ["COLOR"],
   LENGTH: ["SPACING", "RADIUS", "TYPOGRAPHY"],
   DURATION: ["DURATION"],
+  // Bare unitless numbers (RN / JS object themes) — most often a spacing,
+  // radius or typography scale value.
+  NUMBER: ["SPACING", "RADIUS", "TYPOGRAPHY"],
 };
 
 export async function showAlternatives(

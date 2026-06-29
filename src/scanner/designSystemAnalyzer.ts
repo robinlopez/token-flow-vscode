@@ -32,7 +32,6 @@ import { DesignToken, TokenCategory } from "../model/designToken";
 import {
   activeScopesFor,
   ConfiguredScope,
-  isFileExcluded,
   readScopes,
 } from "../settings/scopes";
 
@@ -474,7 +473,6 @@ async function computeCoverage(
       if (abs) excludedAbs.push(abs);
     }
   }
-  const allScopes = readScopes();
 
   const externalPrefixes = collectExternalPrefixes(activeScopes);
   const tokenNames = new Set(allTokens.map((t) => t.name));
@@ -494,9 +492,12 @@ async function computeCoverage(
   for (const uri of files) {
     if (rootRestrictions.length > 0 && !isInsideAny(uri.path, rootRestrictions))
       continue;
+    // Only the ACTIVE scopes' excludes (rootPath restriction + their own
+    // excludedPaths/sourcePaths, already folded into `excludedAbs`) gate
+    // the walk. Applying every configured scope's excludedPaths here was a
+    // cross-scope leak: a `mobile` scope excluding `bo` would wipe out the
+    // entire `bo/src`-rooted `UI` scope analysis ("0 files scanned").
     if (isInsideAny(uri.path, excludedAbs)) continue;
-    // Global excludedPaths from any configured scope (legacy behavior).
-    if (allScopes.some((s) => isFileExcluded(uri.path, s, rootPath))) continue;
     try {
       const stat = await vscode.workspace.fs.stat(uri);
       if (stat.size > MAX_FILE_BYTES) continue;
@@ -905,72 +906,81 @@ function categoryForKind(kind: LiteralKind): TokenCategory | null {
       return "SPACING";
     case "DURATION":
       return "DURATION";
+    case "NUMBER":
+      // A bare number with no property context is genuinely ambiguous
+      // (z-index? opacity? RN spacing?). Leave it uncategorised so the
+      // bucket key falls back to "_" and the literal is still surfaced
+      // as a cluster when it repeats — mirrors IntelliJ's NUMBER kind
+      // fallback, which never forces a category from the value alone.
+      return null;
   }
 }
 
+// Property→category sets, ported verbatim from IntelliJ's
+// `PropertyContext.categoryFor`. The `startsWith` / `includes` / `endsWith`
+// predicates below are what let the mapping recognise both hyphenated CSS
+// (`font-size`, `border-radius`, `padding-top`) AND React-Native / JS
+// camelCase props (`fontSize`, `borderRadius`, `paddingTop`) — the latter
+// arrive here lowercased (`fontsize`, `borderradius`, `paddingtop`), which
+// the prefix/substring checks still match.
+const COLOR_PROPS = new Set([
+  "background", "fill", "stroke", "caret-color", "accent-color",
+  "column-rule-color", "scrollbar-color",
+]);
+const SPACING_PROPS = new Set([
+  "gap", "row-gap", "column-gap", "top", "left", "right", "bottom",
+]);
+const SIZING_PROPS = new Set([
+  "width", "height", "min-width", "min-height", "max-width", "max-height",
+]);
+const LAYOUT_PROPS = new Set([
+  "columns", "break-after", "break-before", "break-inside",
+]);
+const TYPO_PROPS = new Set([
+  "line-height", "letter-spacing", "word-spacing", "text-indent",
+]);
+
 /**
- * Maps a CSS property to the token category that best describes the
- * design-system axis it draws on. Conservative: returns `null` when
- * the property is ambiguous or doesn't pin a single category (e.g.
- * `transform`, `transition`).
+ * Maps a CSS / RN property name to the token category that best describes
+ * the design-system axis it draws on. Faithful port of IntelliJ's
+ * `PropertyContext.categoryFor` (same order, same predicates) so the two
+ * plugins bucket identical literals into identical categories. Returns
+ * `null` when no clear category can be inferred.
+ *
+ * Order matters: colour wins over everything (so `shadow-color` is COLOR,
+ * not SHADOW), then z-index / radius / shadow / effects / typography /
+ * duration / spacing / layout / sizing. The two trailing `BORDER` /
+ * `OPACITY` checks are VS Code refinements with no IntelliJ counterpart —
+ * pure additions in the otherwise-`null` tail.
  */
 function categoryForCssProperty(prop: string): TokenCategory | null {
   const p = prop.toLowerCase().trim();
-  // Typography axis.
+  if (p === "color" || p.endsWith("-color") || COLOR_PROPS.has(p)) return "COLOR";
+  if (p === "z-index" || p === "zindex") return "Z_INDEX";
+  if (p.includes("radius")) return "RADIUS";
+  if (p.includes("shadow")) return "SHADOW";
+  if (p === "outline" || p === "filter" || p === "backdrop-filter") return "EFFECTS";
+  if (p.startsWith("font") || TYPO_PROPS.has(p)) return "TYPOGRAPHY";
   if (
-    p === "font-size" ||
-    p === "line-height" ||
-    p === "letter-spacing" ||
-    p === "font-weight" ||
-    p === "font-family"
+    p.includes("transition") || p.includes("animation") ||
+    p === "duration" || p.endsWith("-delay") || p.endsWith("delay")
   ) {
-    return "TYPOGRAPHY";
+    return "DURATION";
   }
-  // Radius axis.
-  if (p.startsWith("border-radius") || p.endsWith("-radius")) {
-    return "RADIUS";
-  }
-  // Border-width axis.
-  if (p === "border-width" || p.endsWith("-border-width") ||
-      p === "outline-width" || p === "outline-offset") {
-    return "BORDER";
-  }
-  // Sizing axis.
   if (
-    p === "width" || p === "height" ||
-    p === "min-width" || p === "min-height" ||
-    p === "max-width" || p === "max-height" ||
-    p === "inline-size" || p === "block-size"
-  ) {
-    return "SIZING";
-  }
-  // Spacing axis — padding, margin, gap.
-  if (
-    p === "padding" || p.startsWith("padding-") || p.startsWith("padding-inline") ||
-    p === "margin" || p.startsWith("margin-") || p.startsWith("margin-inline") ||
-    p === "gap" || p === "row-gap" || p === "column-gap" || p === "top" ||
-    p === "right" || p === "bottom" || p === "left" || p === "inset"
+    SPACING_PROPS.has(p) || p.startsWith("padding") ||
+    p.startsWith("margin") || p.startsWith("inset")
   ) {
     return "SPACING";
   }
-  // Colour axis — properties whose value is colour-typed.
-  if (
-    p === "color" || p === "background-color" || p === "background" ||
-    p.endsWith("-color") || p === "fill" || p === "stroke" ||
-    p === "caret-color" || p === "accent-color"
-  ) {
-    return "COLOR";
+  if (LAYOUT_PROPS.has(p) || p.startsWith("grid") || p.startsWith("flex")) {
+    return "LAYOUT";
   }
-  // Shadow axis.
-  if (p === "box-shadow" || p === "text-shadow") return "SHADOW";
-  // Duration / timing.
-  if (p === "transition-duration" || p === "animation-duration" ||
-      p === "transition-delay" || p === "animation-delay") {
-    return "DURATION";
+  if (SIZING_PROPS.has(p) || p === "width" || p === "height") return "SIZING";
+  // VS Code refinements (no IntelliJ counterpart):
+  if (p === "border-width" || p.endsWith("-border-width") || p === "outline-offset") {
+    return "BORDER";
   }
-  // Z-index.
-  if (p === "z-index") return "Z_INDEX";
-  // Opacity.
   if (p === "opacity") return "OPACITY";
   return null;
 }

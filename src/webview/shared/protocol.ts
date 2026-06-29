@@ -65,7 +65,7 @@ export interface WireHardcodedMatch {
   readonly line: number;
   /** Inner literal text (`14px`, `#fff`). */
   readonly literal: string;
-  readonly kind: "COLOR" | "LENGTH" | "DURATION";
+  readonly kind: "COLOR" | "LENGTH" | "DURATION" | "NUMBER";
   /** Canonical hex for COLOR literals — drives the row's left swatch. */
   readonly hex: string | null;
   /**

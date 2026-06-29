@@ -600,6 +600,7 @@ const KIND_GLYPH: Record<Kind, string> = {
   COLOR: "●",
   LENGTH: "↔",
   DURATION: "⏱",
+  NUMBER: "#",
 };
 
 // Swap glyph drawn as inline SVG so it scales with the button and

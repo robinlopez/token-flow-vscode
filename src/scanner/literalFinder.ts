@@ -1,6 +1,9 @@
-// Port of `LiteralFinder.kt`. Locates literals in a stylesheet that could
-// be replaced by an indexed design token: hex colors, functional colors
-// (`rgb`/`rgba`/`hsl`/`hsla`/`hwb`), durations and lengths.
+// Port of `LiteralFinder.kt`. Locates literals that could be replaced by
+// an indexed design token: hex colors, functional colors
+// (`rgb`/`rgba`/`hsl`/`hsla`/`hwb`), named colors (`white`, `transparent`,
+// …), durations, lengths, and bare unitless numbers in property-value
+// position (`fontSize: 14`, `borderRadius: 8` — the React-Native / JS
+// object-theme shape).
 //
 // Each [Hit] carries:
 //  - the matched text (`14px`, `#fff`) and its absolute offsets,
@@ -10,12 +13,12 @@
 //    that way the quick-fix swaps the whole expression for `var(--token)`
 //    instead of leaving a redundant `utils.rem-calc(var(--token))`.
 //
-// MVP scope vs. Kotlin: skips `NUMBER_PROP_REGEX` (RN-style unitless
-// literals — irrelevant in pure stylesheet contexts) and the
-// JS-string-literal expansion. `var(--name, FALLBACK)` exclusion and
-// `rem-calc()` wrapper expansion are included.
+// Literals inside `// …` / `/* … */` comments and inside `var(--x, FALLBACK)`
+// fallback expressions are skipped (IntelliJ parity). `rem-calc()` wrapper
+// expansion is included. The JS-string-literal expansion from the Kotlin
+// side is still out of scope (replacement nicety, not a detection gap).
 
-export type LiteralKind = "COLOR" | "LENGTH" | "DURATION";
+export type LiteralKind = "COLOR" | "LENGTH" | "DURATION" | "NUMBER";
 
 export interface Hit {
   /** Inner literal value, used for token-value lookup (e.g. `14px`). */
@@ -52,11 +55,27 @@ const HEX_REGEX =
 // replace the whole call.
 const FN_COLOR_REGEX =
   /(?<![A-Za-z0-9_-])(?:rgb|rgba|hsl|hsla|hwb)\(\s*[^)]*\)/gi;
+// Named colors — same set as the Kotlin side.
+const NAMED_COLOR_REGEX =
+  /(?<![A-Za-z0-9_-])(?:transparent|black|white|red|green|blue|yellow|orange|purple|gray|grey|pink|brown)\b(?!-)/gi;
 const DURATION_REGEX = /(?<![A-Za-z0-9_-])-?\d*\.?\d+(?:ms|s)\b/g;
 const LENGTH_REGEX =
   /(?<![A-Za-z0-9_-])-?\d*\.?\d+(?:px|rem|em|vh|vw|vmin|vmax|ch|ex|%)\b/g;
+// Bare numeric value as the **sole** content of a property slot
+// (`fontSize: 34,`, `radius: 8}`, `opacity: 0.5` at line end). Group 1 is
+// the number itself — it always sits at the very end of the match (the
+// trailing constructs are zero-width lookaheads), so callers recover its
+// offset from `m.index + m[0].length - m[1].length`. The negative
+// lookahead rejects unit-bearing values (`12px`, `1fr`, `50%`) and the
+// positive lookahead requires the number to be alone in its slot, so CSS
+// shorthand like `flex: 1 1 auto` / `border: 1 solid red` doesn't match.
+const NUMBER_PROP_REGEX =
+  /[A-Za-z_$][\w$]*\s*:\s*(-?\d+(?:\.\d+)?)(?![\w%.\-])(?=\s*[,;)}\]\n]|\s*$)/g;
 // `var(--name, FALLBACK)` — capture group 1 is the fallback span.
 const VAR_WITH_FALLBACK = /var\(\s*--[A-Za-z_][A-Za-z0-9_-]*\s*,([^)]*)\)/g;
+// Comment spans — literals inside them must not be flagged (IntelliJ parity).
+const BLOCK_COMMENT_REGEX = /\/\*[\s\S]*?\*\//g;
+const LINE_COMMENT_REGEX = /\/\/.*/g;
 
 const WHITELIST = new Set([
   "0",
@@ -74,13 +93,17 @@ const WHITELIST = new Set([
 export function findLiterals(text: string): Hit[] {
   const out: Hit[] = [];
   const fallbackRanges = computeFallbackRanges(text);
+  const commentRanges = computeCommentRanges(text);
+  const isIgnored = (offset: int): boolean =>
+    isInsideFallback(offset, fallbackRanges) ||
+    isInsideRanges(offset, commentRanges);
 
   const considerMatch = (
     raw: RegExpMatchArray,
     kind: LiteralKind,
   ): Hit | null => {
     const start = raw.index ?? 0;
-    if (isInsideFallback(start, fallbackRanges)) return null;
+    if (isIgnored(start)) return null;
     if (kind !== "COLOR" && WHITELIST.has(raw[0].toLowerCase())) return null;
     const end = start + raw[0].length;
     const hit = expandWrapper(text, raw[0], start, end, kind);
@@ -97,6 +120,10 @@ export function findLiterals(text: string): Hit[] {
     const hit = considerMatch(m, "COLOR");
     if (hit) out.push(hit);
   }
+  for (const m of text.matchAll(NAMED_COLOR_REGEX)) {
+    const hit = considerMatch(m, "COLOR");
+    if (hit) out.push(hit);
+  }
   for (const m of text.matchAll(DURATION_REGEX)) {
     const hit = considerMatch(m, "DURATION");
     if (hit) out.push(hit);
@@ -108,7 +135,54 @@ export function findLiterals(text: string): Hit[] {
     if (out.some((h) => h.startOffset === hit.startOffset)) continue;
     out.push(hit);
   }
+  // Bare numbers in property-value position — runs last so any value
+  // already tagged at the same offset (a unit-bearing `12px`) wins. The
+  // reported range is group 1 (the number), not the leading `IDENT:`.
+  for (const m of text.matchAll(NUMBER_PROP_REGEX)) {
+    const number = m[1];
+    if (number === undefined) continue;
+    const start = (m.index ?? 0) + m[0].length - number.length;
+    const end = start + number.length;
+    if (isIgnored(start)) continue;
+    if (WHITELIST.has(number.toLowerCase())) continue;
+    if (out.some((h) => h.startOffset === start)) continue;
+    // Reuse the same declaration detector as the unit-bearing literals so
+    // RN/JS catalog entries (`sm: 8`, `"sm": 8`) fold into the declaration
+    // bucket exactly like `8px` and get skipped consistently.
+    if (isTokenDeclarationValue(text, start)) continue;
+    out.push({
+      text: number,
+      startOffset: start,
+      endOffsetExclusive: end,
+      kind: "NUMBER",
+      replaceStart: start,
+      replaceEndExclusive: end,
+      replaceText: number,
+      cssProperty: extractCssProperty(text, start),
+    });
+  }
   return out;
+}
+
+/** Returns block (`/* … *\/`) and line (`// …`) comment spans. */
+function computeCommentRanges(text: string): Range[] {
+  const ranges: Range[] = [];
+  for (const m of text.matchAll(BLOCK_COMMENT_REGEX)) {
+    const start = m.index ?? 0;
+    ranges.push({ start, endExclusive: start + m[0].length });
+  }
+  for (const m of text.matchAll(LINE_COMMENT_REGEX)) {
+    const start = m.index ?? 0;
+    ranges.push({ start, endExclusive: start + m[0].length });
+  }
+  return ranges;
+}
+
+function isInsideRanges(offset: int, ranges: Range[]): boolean {
+  for (const r of ranges) {
+    if (offset >= r.start && offset < r.endExclusive) return true;
+  }
+  return false;
 }
 
 /**
