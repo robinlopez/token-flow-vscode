@@ -18,10 +18,23 @@
 //   • `externalPrefixes`     — CSS var prefixes treated as external
 //                               (`--vscode-`, `--p-`, `--mdc-`). Matches
 //                               the IntelliJ field 1:1.
+//   • `analysisExcludedPaths`— IntelliJ v2 field. IntelliJ distinguishes
+//                               scan-level excludes (`excludedPaths`) from
+//                               analysis-level ones (`analysisExcludedPaths`).
+//                               VS Code has a single `excludedPaths`
+//                               (analysis-level), so on import we fold both
+//                               IntelliJ lists into it (union); on export
+//                               we mirror `excludedPaths` back into
+//                               `analysisExcludedPaths` for round-trip.
+//
+// Version history:
+//   • 1 — VS Code initial format (no `analysisExcludedPaths`).
+//   • 2 — IntelliJ adds `analysisExcludedPaths`. Field-additive only, so
+//         we read it directly rather than refusing the file.
 
 import { ConfiguredScope } from "./scopes";
 
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 interface ScopeDto {
   readonly name: string;
@@ -30,6 +43,8 @@ interface ScopeDto {
   readonly whitelistPaths: readonly string[];
   readonly excludedPaths: readonly string[];
   readonly externalPrefixes: readonly string[];
+  /** IntelliJ v2 analysis-level excludes — folded into `excludedPaths` on import. */
+  readonly analysisExcludedPaths?: readonly string[];
 }
 
 interface ScopeConfigFile {
@@ -51,6 +66,9 @@ export function exportScopes(scopes: readonly ConfiguredScope[]): string {
       sourcePaths: [...s.sourcePaths],
       whitelistPaths: [...s.whitelistPaths],
       excludedPaths: [...s.excludedPaths],
+      // Mirror into the IntelliJ analysis-exclude field so a VS Code
+      // export round-trips its excludes back into IntelliJ v2.
+      analysisExcludedPaths: [...s.excludedPaths],
       externalPrefixes: [...s.externalPrefixes],
     })),
   };
@@ -99,15 +117,27 @@ function normaliseImported(raw: unknown): ConfiguredScope {
   const obj = raw as Record<string, unknown>;
   const name = stringOr(obj.name, "").trim() || "(unnamed)";
   const rootPath = stringOr(obj.rootPath, "").trim();
+  // VS Code has a single excludes list; IntelliJ v2 splits scan-level
+  // (`excludedPaths`) from analysis-level (`analysisExcludedPaths`).
+  // Fold both into our `excludedPaths` so nothing the user carved out
+  // gets silently re-included.
+  const excludedPaths = dedupe([
+    ...stringArrayOr(obj.excludedPaths),
+    ...stringArrayOr(obj.analysisExcludedPaths),
+  ]);
   return {
     name,
     rootPath,
     sourcePaths: stringArrayOr(obj.sourcePaths),
     whitelistPaths: stringArrayOr(obj.whitelistPaths),
-    excludedPaths: stringArrayOr(obj.excludedPaths),
+    excludedPaths,
     externalPrefixes: stringArrayOr(obj.externalPrefixes),
     isCommon: !rootPath,
   };
+}
+
+function dedupe(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }
 
 function stringOr(v: unknown, fallback: string): string {
