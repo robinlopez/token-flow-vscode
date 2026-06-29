@@ -313,7 +313,18 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-descriptionForeground));
-  background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background));
+  /* MUST be fully opaque: this is a sticky header, so any translucency
+     lets the scrolling list bleed through behind it. `sideBarSectionHeader-
+     background` is *transparent* in several built-in themes (Dark Modern,
+     Dark+), and since it IS defined the `var()` fallback never fires — so
+     we paint an opaque base (`sideBar-background`) and layer the theme's
+     header tint on top via a gradient. The header keeps its accent where
+     the theme provides one, but never shows what's underneath. */
+  background-color: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  background-image: linear-gradient(
+    var(--vscode-sideBarSectionHeader-background, transparent),
+    var(--vscode-sideBarSectionHeader-background, transparent)
+  );
   display: flex;
   align-items: center;
   gap: 6px;
@@ -326,7 +337,12 @@ body {
 }
 
 .category__header:hover {
-  background: var(--vscode-list-hoverBackground);
+  /* Keep the opaque base from the rule above; only the tint changes to the
+     (often semi-transparent) hover colour, layered over the solid base. */
+  background-image: linear-gradient(
+    var(--vscode-list-hoverBackground),
+    var(--vscode-list-hoverBackground)
+  );
 }
 
 .category__chevron {
