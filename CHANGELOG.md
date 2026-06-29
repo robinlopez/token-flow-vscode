@@ -2,6 +2,21 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](https://semver.org/).
 
+## [0.1.5] — 2026-06-29
+
+### Fixed
+- **Analyse scanned 0 files (cross-scope exclusion leak).** When more than one scope was configured, the coverage walk applied **every** scope's `excludedPaths` to **every** file, not just the active scope's. A `mobile` scope excluding `bo` therefore wiped out the entire `bo/src`-rooted `UI` scope analysis — the dashboard reported *"0 files scanned"*, every sub-score sat at 100/100, and all tokens showed as unused. The walk now honours only the **active** scope's excludes (which were already folded into the per-walk exclude set), matching IntelliJ's "active scopes only" semantics. This was the dominant cause of VS Code under-detecting vs IntelliJ on a multi-scope project.
+- **Analyse detected fewer hardcoded values than the IntelliJ plugin on the same scope.** The VS Code `LiteralFinder` was stylesheet-shaped and missed two whole classes of literal that IntelliJ flags — closing the parity gap:
+  - **Unitless numeric props** (`NUMBER` kind) — `fontSize: 14`, `borderRadius: 8`, `margin: 16`, `opacity: 0.5`, `z-index: 10`, … The previous build found **zero** literals in React-Native / JS object themes (where everything is a bare number), so the whole `mobile` scope under-reported. The regex requires the number to be the sole value of its slot, so CSS shorthand (`flex: 1 1 auto`) and unit-bearing values (`200px`, `1fr`) are left untouched.
+  - **Named colors** — `white`, `black`, `transparent`, `red`, … are now flagged like any other colour literal.
+  - **Comment exclusion** — literals inside `// …` and `/* … */` are no longer flagged (matches IntelliJ; also keeps the new NUMBER pass from picking up numbers in comments).
+- **Property→category mapping now recognises React-Native camelCase.** `categoryForCssProperty` was matching exact hyphenated CSS names (`font-size`), so RN/JS props (`fontSize`, `borderRadius`, `paddingTop`) fell through uncategorised. Ported IntelliJ's `PropertyContext.categoryFor` predicates (`startsWith("font")`, `includes("radius")`, `startsWith("padding")`, …) which match both spellings — so a hardcoded `borderRadius: 8` now correctly classifies as RADIUS debt when a radius token exists, instead of being dropped or mis-bucketed.
+- **Scope config import rejected IntelliJ v2 files** — importing a `token-flow-scopes.json` exported from the IntelliJ plugin failed with *"Config file version 2 is newer than this plugin (supported: 1). Update Token Flow."* The VS Code importer now supports schema **version 2**: the IntelliJ-only `analysisExcludedPaths` field is folded into VS Code's single `excludedPaths` list (deduped union with the scan-level `excludedPaths`), so nothing the user carved out gets silently re-included. Exports are now tagged version 2 and mirror `excludedPaths` back into `analysisExcludedPaths` for round-trip fidelity with IntelliJ.
+- **Transparent sticky category headers in the Library.** The list's sticky category dividers let the scrolling content bleed through behind them — `.category__header` painted its background with `--vscode-sideBarSectionHeader-background`, which is *defined as transparent* in several built-in themes (Dark Modern, Dark+), so the `var()` fallback to an opaque colour never fired. The header now paints a guaranteed-opaque base (`sideBar-background`) with the theme's header tint layered on top, so it keeps its accent but never shows the list underneath (hover included).
+
+### Changed
+- **Analyse — section order.** The accordion now leads with **Broken references**, then **Hardcoded values** (a token already exists → mechanical fix), then **Hardcoded clusters** (opportunities), before the remaining sections. Surfaces hard bugs and immediate debt first.
+
 ## [0.1.4] — 2026-06-26
 
 ### Added

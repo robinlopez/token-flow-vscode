@@ -1,15 +1,16 @@
 // Analyse dashboard client. Renders an [WireAnalysisReport] as:
 //   1. A circular SVG gauge with the global A→F grade and 0..100 score.
 //   2. A grid of sub-score bars (one per axis).
-//   3. Accordion sections — Hardcoded clusters, Broken references,
-//      Unused tokens, Duplicates, Semantic incoherences, Token-source
-//      usage. Each section has a help tooltip and a target button per
-//      row to navigate to the source location.
+//   3. Accordion sections — Broken references, Hardcoded values,
+//      Hardcoded clusters, Unused tokens, Duplicates, Semantic
+//      incoherences, Token-source usage. Each section has a help tooltip
+//      and a target button per row to navigate to the source location.
 //
-// Order chosen for actionability: noisy/dirty stuff (hardcoded, broken,
-// unused, duplicates) bubbles up first so the user sees what to clean
-// up; structural/curiosity sections (semantic mismatches, source usage)
-// sit at the bottom. Mirrors the IntelliJ AnalyzePanel.
+// Order chosen for actionability: broken references first (hard bugs),
+// then hardcoded debt (token already exists → mechanical fix) ahead of
+// hardcoded clusters (opportunities), then the remaining noisy sections;
+// structural/curiosity sections (semantic mismatches, source usage) sit
+// at the bottom.
 
 import type {
   AnalyseClientMessage,
@@ -109,10 +110,10 @@ function render(report: WireAnalysisReport): void {
     buildHeader(report),
     buildSubScoreGrid(report.subScores),
     accordionSection({
-      title: "Hardcoded clusters",
-      count: report.hardcodedClusters.length,
-      help: SECTION_HELP.HARDCODED,
-      body: () => hardcodedBody(report.hardcodedClusters),
+      title: "Broken references",
+      count: report.brokenReferences.length,
+      help: SECTION_HELP.BROKEN_REF,
+      body: () => brokenBody(report.brokenReferences),
     }),
     accordionSection({
       title: "Hardcoded values",
@@ -121,10 +122,10 @@ function render(report: WireAnalysisReport): void {
       body: () => hardcodedValuesBody(report.hardcodedValues),
     }),
     accordionSection({
-      title: "Broken references",
-      count: report.brokenReferences.length,
-      help: SECTION_HELP.BROKEN_REF,
-      body: () => brokenBody(report.brokenReferences),
+      title: "Hardcoded clusters",
+      count: report.hardcodedClusters.length,
+      help: SECTION_HELP.HARDCODED,
+      body: () => hardcodedBody(report.hardcodedClusters),
     }),
     accordionSection({
       title: "Unused tokens",

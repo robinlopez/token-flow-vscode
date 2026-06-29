@@ -1,5 +1,39 @@
 # Token Flow — Release Notes
 
+## v0.1.5 — 2026-06-29 · Analyse reliability & IntelliJ parity
+
+A focused reliability pass on the **Analyse** dashboard so it detects what the IntelliJ edition detects on the same scope, plus scope-config interop and a Library polish fix.
+
+### Analyse now scans your files again
+
+On a multi-scope project the dashboard could report **"0 files scanned"** — every sub-score pinned at 100/100 and every token flagged unused. The coverage walk was applying **every** scope's excludes to **every** file: a `mobile` scope excluding `bo` silently wiped out the analysis of a `bo/src`-rooted `UI` scope. The walk now honours **only the active scope's** excludes, matching IntelliJ's semantics. This was the dominant cause of VS Code under-reporting versus IntelliJ.
+
+### Hardcoded detection on par with IntelliJ
+
+The literal finder was stylesheet-shaped and missed whole classes of value that IntelliJ flags:
+
+- **Unitless numeric props** — `fontSize: 14`, `borderRadius: 8`, `margin: 16`, `opacity: 0.5`, `z-index: 10`. React-Native / JS object themes (where everything is a bare number) previously surfaced **zero** hardcoded values. The number must be the sole value of its slot, so CSS shorthand (`flex: 1 1 auto`) and unit-bearing values (`200px`, `1fr`) are left untouched.
+- **Named colors** — `white`, `black`, `transparent`, `red`, … now flagged like any other colour literal.
+- **Comment exclusion** — literals inside `// …` and `/* … */` are no longer flagged.
+- **camelCase property mapping** — `fontSize`, `borderRadius`, `paddingTop` now classify like their hyphenated CSS twins (`font-size`, `border-radius`, `padding-top`), so a hardcoded `borderRadius: 8` is recognised as RADIUS debt when a radius token exists.
+
+### Import IntelliJ v2 scope configs
+
+Importing a `token-flow-scopes.json` exported from the IntelliJ plugin failed with *"Config file version 2 is newer than this plugin."* The importer now supports schema **version 2**: the IntelliJ-only `analysisExcludedPaths` field folds into VS Code's `excludedPaths`, and exports round-trip back to IntelliJ.
+
+### Library & dashboard polish
+
+- **Sticky category headers** in the Library no longer let the scrolling list bleed through behind them — they paint an opaque, theme-tinted background in every theme (Dark Modern / Dark+ included).
+- **Analyse section order** now leads with **Broken references → Hardcoded values → Hardcoded clusters**, surfacing hard bugs and immediate debt first.
+
+### Install
+
+```
+code --install-extension token-flow-vscode-0.1.5.vsix
+```
+
+---
+
 ## v0.1.4 — 2026-06-26 · Copy Token Value
 
 ### Copy a token's resolved value — without leaving the keyboard
