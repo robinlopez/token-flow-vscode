@@ -453,6 +453,8 @@ file determines which scopes are visible at any moment.
 - `excludedPaths` — folders/files inside the scope's `rootPath` that
   the Hardcoded panel + Analyse aggregator must skip entirely.
   Equivalent to the IntelliJ `analysisExcludedPaths`.
+- `externalPrefixes` — variable-name prefixes owned by this scope but
+  declared outside the design system. See §16.
 
 ### Settings UI
 
@@ -550,10 +552,145 @@ CSS formats.
 - **Toggle**: `tokenFlow.copyValue.enabled` (default `true`) gates the
   command, the menu entry and the hover links.
 
+## 16. Reference resolution — tokenised / external / broken
+
+Single normative implementation on the VS Code side:
+`scanner/referenceScan.ts` (`collectReferences`). IntelliJ counterpart:
+`DesignSystemAnalyzer.computeCoverage` + `inspection/LiteralFinder.kt`
++ `analyze/TokenPathShape.kt`.
+
+### Reference syntaxes
+
+| Constant | Pattern | Broken-eligible |
+|---|---|---|
+| `CSS_REF_RE` | `var\(\s*--([A-Za-z_][A-Za-z0-9_-]*)(?:\s*,[^)]*)?\)` | ✅ |
+| `SCSS_REF_RE` | `(?<![A-Za-z0-9_-])\$([A-Za-z_][A-Za-z0-9_-]*)` | ❌ never |
+| `JS_PATH_REF_RE` | `(['"`+"`"+`])\{([A-Za-z_][A-Za-z0-9_.-]*)\}\1` | ✅ |
+| `DT_REF_RE` | `dt\(\s*(['"`+"`"+`])([A-Za-z_][A-Za-z0-9_.-]*)\1\s*\)` | ✅ |
+
+SCSS variables are counted and resolved but **never** reported broken:
+they come from function args, mixin locals, `@import`-ed partials and
+runtime contexts a static walk can't see.
+
+Comments (`/* … */`, `// …`) and SCSS interpolations (`#{…}`) are masked
+to same-length whitespace before matching, so offsets stay valid.
+
+### Decision order (invariant — both sides must match)
+
+```
+for each reference hit:
+  name = extractTokenName(hit)                  // '--x' | '$x' | 'a.b'
+
+  1. JS_PATH only — isPlaceholderCallArgument(text, offset)?
+        → drop entirely (no tokenised, no referenced, no broken)
+  2. JS_PATH only — !pathShape.isPlausibleReference(rawText, name)?
+        → drop entirely
+  3. tokenised++
+  4. tokenNames.has(name)?          → referenced.add(name);  done
+  5. externalPrefixes match?        → neutral;               done
+  6. dynamicCssVars.has(name)?      → referenced.add(name);  done
+  7. resolveReference / findSuffixToken hit?
+                                    → referenced.add(canonical); done
+  8. otherwise                      → broken
+```
+
+Steps 1–2 run **before** the counter on purpose: a placeholder counted as
+tokenised inflates the coverage ratio just as badly as it pollutes the
+broken list.
+
+**VS Code divergence (deliberate):** IntelliJ's loop does
+`referenced.add(name)` on the raw name right after `tokenised++`. VS Code
+only records **canonical** names (step 4/6/7), because `referenced` is
+what unused-token detection intersects against — adding a raw
+non-canonical or external name there could mask a genuinely unused token.
+`whitelistPaths` tokens need no separate `ignoredNames` set on this side:
+they are indexed with `external: true` and their names are already in
+`tokenNames`.
+
+### `externalPrefixes` (§3 of the port spec)
+
+Prefixes of variable names that are **valid but declared outside the
+design system**: framework-injected (`--p-`, `--ion-`, `--mat-`,
+`--mdc-`, `--bs-`, `--vscode-`) or a component's deliberate
+customisation API (`--ui-slider-`).
+
+A matching reference is **neutral**:
+
+| | |
+|---|---|
+| counted as `tokenised` | ✅ it *is* a variable, not a hardcoded value |
+| reported as broken | ❌ |
+| added to `referenced` | ❌ no canonical token behind it |
+| reference-integrity penalty | ❌ |
+
+- Comparison is `startsWith` on the **extracted** name, which includes
+  the `--` for a CSS variable → prefixes are written with their dashes.
+- Two tiers on the VS Code side (IntelliJ has only the per-scope one):
+  `tokenFlow.externalPrefixes` (project-wide) **∪** each active scope's
+  `externalPrefixes`, trimmed and deduplicated
+  (`settings/scopes.ts#effectiveExternalPrefixes`).
+- `resolveReference(name, tokenNames, externalPrefixes)` also honours
+  them, returning the name flagged `external` — a safety net for call
+  paths that bypass the loop above.
+- **Granularity trade-off**: prefer the narrowest prefix. `--ui-`
+  neutralises *every* `--ui-*` reference including a real typo on an
+  existing `--ui-…` token; `--ui-slider-` covers only that component's
+  API.
+
+### Placeholder guard (§2.A) — `scanner/placeholderGuard.ts`
+
+Applies to `JS_PATH_REF_RE` matches **only**. `var()`, `$var` and `dt()`
+are unambiguous.
+
+- Backward walk from the literal to the nearest unmatched `(`, bounded to
+  `CALLEE_LOOKBACK = 400` chars.
+- Skips nested calls (paren depth) and jumps over quoted arguments, so
+  `.replace('(', '')` doesn't unbalance the walk.
+- Stops at `;`, `{`, `}` — the `{` case is what keeps
+  `primary: '{color.primary}'` in an object literal safe.
+- Verdict on the **trailing identifier** of the callee, lowercased, so
+  `String.prototype.replace`, `this.translate.instant` and
+  `TranslateService.transform` all match `PLACEHOLDER_CALLEES`:
+  `replace`, `replaceAll`, `split`, `join`, `match`, `matchAll`,
+  `search`, `test`, `exec`, `includes`, `indexOf`, `lastIndexOf`,
+  `startsWith`, `endsWith`, `regexp`, `t`, `$t`, `translate`, `instant`,
+  `transform`, `format`, `formatMessage`, `sprintf`, `interpolate`,
+  `i18n`.
+
+### Vocabulary filter (§2.B) — `scanner/tokenPathShape.ts`
+
+Built **once per scan** from the same `tokenNames` set. Pre-computes
+`pathRoots` (first segment of every dotted JS name) and
+`hasFlatPathTokens` (at least one bare dot-less JS name); `--x` / `$x`
+names are skipped since they never appear as `'{…}'`.
+
+Verdict for a brace-string reference, first match wins:
+
+| # | Condition | Verdict |
+|---|---|---|
+| 1 | no JS-path token declared at all | ❌ not a reference |
+| 2 | name resolves exactly | ✅ |
+| 3 | root segment is a known namespace (`{color.primry}` → `color`) | ✅ *(typo still reported broken)* |
+| 4 | root segment is ≤ 1 edit from a known namespace (`{colr.primary}`) | ✅ |
+| 5 | single-segment name **and** the project has flat JS names | ✅ *(historic behaviour)* |
+| 6 | otherwise (`{first}`, `{user.name}`) | ❌ |
+
+`isOneEditApart` bails out under 4 chars — a single edit on a short root
+carries no signal.
+
+### Tests
+
+`npm test` — `src/test/{placeholderGuard,tokenPathShape,referenceScan}.test.ts`
+pin every table above. These modules are deliberately `vscode`-free so
+the rules stay testable.
+
+
 ---
 
-**Last sync'd against**: IntelliJ token-flow `v0.1.2` baseline, plus
-Phase 1–5 JS-parser port (commit pending), helper-call synthesis,
-14-category parity, and mode-segment collapsing. VS Code port is now
-at functional parity with IntelliJ for the **detection engine**
-(capabilities 1–7 + 9 in the project's tracked list).
+**Last sync'd against**: IntelliJ token-flow `v0.2.4` for §16 (broken-
+reference parity: placeholder guard, `TokenPathShape`,
+`externalPrefixes`); `v0.1.2` baseline elsewhere, plus Phase 1–5
+JS-parser port, helper-call synthesis, 14-category parity, and
+mode-segment collapsing. VS Code port is now at functional parity with
+IntelliJ for the **detection engine** (capabilities 1–7 + 9 in the
+project's tracked list).

@@ -25,13 +25,19 @@ import { TokenScanner } from "./tokenScanner";
 import { DynamicCssVarIndex } from "./dynamicCssVarIndex";
 import { findLiterals, LiteralKind } from "./literalFinder";
 import { TokenValueIndex } from "./tokenValueIndex";
-import { resolveReference } from "./tokenNameParser";
+import {
+  BrokenReferenceHit,
+  collectReferences,
+  lineFor,
+} from "./referenceScan";
+import { TokenPathShape } from "./tokenPathShape";
 import { findSuggestions } from "./findSuggestions";
 import { getExpectedRoleForProperty } from "../model/semantics";
 import { DesignToken, TokenCategory } from "../model/designToken";
 import {
   activeScopesFor,
   ConfiguredScope,
+  effectiveExternalPrefixes,
   readScopes,
 } from "../settings/scopes";
 
@@ -104,12 +110,8 @@ export interface HardcodedValue {
   readonly occurrences: readonly HardcodedOccurrence[];
 }
 
-export interface BrokenReference {
-  readonly name: string;
-  readonly filePath: string;
-  readonly offset: number;
-  readonly line: number;
-}
+/** Re-exported so consumers keep importing it from the analyser. */
+export type BrokenReference = BrokenReferenceHit;
 
 export interface TokenSourceUsage {
   readonly filePath: string;
@@ -418,24 +420,6 @@ interface LiteralWithFile {
   readonly cssProperty: string | null;
 }
 
-const CSS_REF_RE = /var\(\s*--([A-Za-z_][A-Za-z0-9_-]*)(?:\s*,[^)]*)?\)/g;
-// SCSS variable reference. Counted toward tokenised refs but **never**
-// flagged as broken — SCSS variables come from function args, mixin
-// locals, @import-ed partials, and runtime contexts the analyser can't
-// see. Flagging them as broken floods the report with noise.
-const SCSS_REF_RE = /(?<![A-Za-z0-9_-])\$([A-Za-z_][A-Za-z0-9_-]*)/g;
-const JS_PATH_REF_RE = /(['"`])\{([A-Za-z_][A-Za-z0-9_.-]*)\}\1/g;
-const DT_REF_RE = /dt\(\s*(['"`])([A-Za-z_][A-Za-z0-9_.-]*)\1\s*\)/g;
-
-// Strip `/* … */`, `// …` and SCSS interpolations `#{…}` before scanning
-// references so we don't pick up:
-//   • commented-out code (real refs inside a deleted block),
-//   • `$type` inside `#{$type}-#{$size}` (function-arg interpolation —
-//     never a top-level project token).
-const BLOCK_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
-const LINE_COMMENT_RE = /\/\/.*$/gm;
-const SCSS_INTERPOLATION_RE = /#\{[^}]*\}/g;
-
 async function computeCoverage(
   allTokens: readonly DesignToken[],
   rootPath: string | null,
@@ -474,8 +458,18 @@ async function computeCoverage(
     }
   }
 
-  const externalPrefixes = collectExternalPrefixes(activeScopes);
+  const externalPrefixes = effectiveExternalPrefixes(activeScopes);
   const tokenNames = new Set(allTokens.map((t) => t.name));
+  // Built once per scan — the two pre-computed sets behind it decide
+  // whether a `'{…}'` name belongs to the project's token vocabulary
+  // at all (§2.B).
+  const pathShape = TokenPathShape.of(tokenNames);
+  const refOptions = {
+    tokenNames,
+    externalPrefixes,
+    pathShape,
+    dynamicCssVars: dynamicCssVarIndex,
+  };
 
   const files = await vscode.workspace.findFiles(
     COVERAGE_GLOB,
@@ -520,46 +514,15 @@ async function computeCoverage(
       }
       if (literals.length > 0) literalsByFile.set(uri.path, literals);
 
-      // Mask comments + SCSS interpolations so the ref regexes don't
-      // pick them up. We replace with spaces of equal length so the
-      // captured offsets remain valid for line/col lookup.
-      const masked = maskNonCodeRanges(text);
-
-      // CSS vars — broken-eligible.
-      collectCssRefs(
-        masked,
-        uri.path,
-        tokenNames,
-        externalPrefixes,
-        referenced,
-        broken,
-        dynamicCssVarIndex,
+      // References — masking, the placeholder guard, the vocabulary
+      // filter and the external-prefix / broken verdict all live in
+      // `referenceScan` so the Analyse dashboard and the unit tests
+      // share one implementation.
+      tokenised += collectReferences(
+        text,
+        { ...refOptions, filePath: uri.path },
+        { referenced, broken },
       );
-      tokenised += countMatches(masked, CSS_REF_RE);
-
-      // SCSS vars — referenced but NEVER broken (IntelliJ parity).
-      collectScssRefs(masked, tokenNames, referenced);
-      tokenised += countMatches(masked, SCSS_REF_RE);
-
-      // JS object paths + dt() — broken-eligible.
-      collectPathRefs(
-        masked,
-        JS_PATH_REF_RE,
-        uri.path,
-        tokenNames,
-        referenced,
-        broken,
-      );
-      collectPathRefs(
-        masked,
-        DT_REF_RE,
-        uri.path,
-        tokenNames,
-        referenced,
-        broken,
-      );
-      tokenised += countMatches(masked, JS_PATH_REF_RE);
-      tokenised += countMatches(masked, DT_REF_RE);
     } catch {
       // Unreadable file — skip silently.
     }
@@ -583,130 +546,6 @@ async function computeCoverage(
   };
 }
 
-function collectExternalPrefixes(
-  scopes: readonly ConfiguredScope[],
-): readonly string[] {
-  const set = new Set<string>();
-  for (const s of scopes) for (const p of s.externalPrefixes) set.add(p);
-  return [...set];
-}
-
-function collectCssRefs(
-  text: string,
-  filePath: string,
-  tokenNames: ReadonlySet<string>,
-  externalPrefixes: readonly string[],
-  referenced: Set<string>,
-  broken: BrokenReference[],
-  dynamicCssVarIndex: DynamicCssVarIndex,
-): void {
-  for (const m of text.matchAll(CSS_REF_RE)) {
-    const captured = m[1];
-    if (!captured) continue;
-    const name = "--" + captured;
-    const offset = m.index ?? 0;
-    // Skip declarations: `--name: value` — left of the `:` is the
-    // declaration site, not a reference.
-    if (isDeclarationAt(text, offset)) continue;
-    if (tokenNames.has(name)) {
-      referenced.add(name);
-      continue;
-    }
-    if (externalPrefixes.some((p) => name.startsWith(p))) continue;
-    if (dynamicCssVarIndex.has(name)) continue;
-    broken.push({
-      name: m[0],
-      filePath,
-      offset,
-      line: lineFor(text, offset),
-    });
-  }
-}
-
-function collectScssRefs(
-  text: string,
-  tokenNames: ReadonlySet<string>,
-  referenced: Set<string>,
-): void {
-  for (const m of text.matchAll(SCSS_REF_RE)) {
-    const captured = m[1];
-    if (!captured) continue;
-    const name = "$" + captured;
-    if (isDeclarationAt(text, m.index ?? 0)) continue;
-    if (tokenNames.has(name)) referenced.add(name);
-    // No broken-ref bookkeeping for SCSS — IntelliJ parity.
-  }
-}
-
-function collectPathRefs(
-  text: string,
-  regex: RegExp,
-  filePath: string,
-  tokenNames: ReadonlySet<string>,
-  referenced: Set<string>,
-  broken: BrokenReference[],
-): void {
-  for (const m of text.matchAll(regex)) {
-    const captured = m[2];
-    if (!captured) continue;
-    const offset = m.index ?? 0;
-    // Full `resolveReference` chain — handles binding-prefix strip
-    // (`token.global.x` vs indexed `global.x`), mode-segment strip
-    // (`global.modeLight.x` vs indexed `global.x`), and camelCase /
-    // dot drift between source and tree
-    // (`…defaultHigh.surface` vs `…default.high.surface`).
-    const resolved = resolveReference(captured, tokenNames);
-    if (resolved) {
-      referenced.add(resolved.tokenName);
-      continue;
-    }
-    // Last-resort lead-segment strip — handles aliases like
-    // `{primitive.neutral.700}` whose target index entry is
-    // `neutral.700` (no shared prefix). Mirrors the alias resolver
-    // in TokenScanner.resolveValue, step (c).
-    const suffix = findSuffixToken(captured, tokenNames);
-    if (suffix) {
-      referenced.add(suffix);
-      continue;
-    }
-    broken.push({
-      name: m[0],
-      filePath,
-      offset,
-      line: lineFor(text, offset),
-    });
-  }
-}
-
-/**
- * Returns true when the captured CSS/SCSS variable at [offset] sits on
- * the **left** side of a `:` (i.e. it's being declared, not referenced).
- * Mirrors `LiteralFinder.variableDeclarationName` from the IntelliJ
- * side — we don't need the name itself, only the boolean.
- */
-function isDeclarationAt(text: string, offset: number): boolean {
-  // Find the end of the captured identifier — walk forward over
-  // identifier chars starting at offset+1 (offset points at `$` or the
-  // first `-` of `--`).
-  let i = offset;
-  // Skip leading `$` or `--` prefix.
-  if (text[i] === "$") i++;
-  else if (text[i] === "-" && text[i + 1] === "-") i += 2;
-  while (i < text.length && /[A-Za-z0-9_-]/.test(text[i])) i++;
-  // Peek the next non-whitespace char — `:` means declaration.
-  while (i < text.length && /\s/.test(text[i])) i++;
-  return text[i] === ":";
-}
-
-function maskNonCodeRanges(text: string): string {
-  // Replace each match with same-length whitespace so offsets stay
-  // aligned for downstream line/col calculations and the masked output
-  // still matches the original positions character-for-character.
-  let out = text.replace(BLOCK_COMMENT_RE, (m) => " ".repeat(m.length));
-  out = out.replace(LINE_COMMENT_RE, (m) => " ".repeat(m.length));
-  out = out.replace(SCSS_INTERPOLATION_RE, (m) => " ".repeat(m.length));
-  return out;
-}
 
 function absolutizeOrNull(rootPath: string, rel: string): string | null {
   if (!rel.trim()) return null;
@@ -720,22 +559,6 @@ function isInsideAny(path: string, roots: readonly string[]): boolean {
     if (path === r || path.startsWith(r + "/")) return true;
   }
   return false;
-}
-
-function findSuffixToken(name: string, tokenNames: ReadonlySet<string>): string | null {
-  if (!name.includes(".")) return null;
-  const segs = name.split(".");
-  for (let skip = 1; skip < segs.length; skip++) {
-    const sub = segs.slice(skip).join(".");
-    if (tokenNames.has(sub)) return sub;
-  }
-  return null;
-}
-
-function countMatches(text: string, regex: RegExp): number {
-  let n = 0;
-  for (const _ of text.matchAll(regex)) n++;
-  return n;
 }
 
 function perSourceUsage(
@@ -1104,12 +927,3 @@ function gradeFor(score: number): string {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────
-
-function lineFor(text: string, offset: number): number {
-  let line = 0;
-  const end = Math.min(offset, text.length);
-  for (let i = 0; i < end; i++) {
-    if (text.charCodeAt(i) === 10) line++;
-  }
-  return line;
-}

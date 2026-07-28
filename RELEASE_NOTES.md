@@ -1,5 +1,53 @@
 # Token Flow — Release Notes
 
+## v0.1.6 — 2026-07-28 · Broken references you can trust
+
+**Analyse's broken-reference list only reports real bugs now.** Two sources of false positives are gone — one fixed in code, one made configurable.
+
+### No more phantom broken references from message placeholders
+
+The Style-Dictionary alias syntax (`'{color.primary}'`) looks exactly like the most common placeholder convention in application code. An Angular paginator was enough to poison the report:
+
+```ts
+currentPageReportTemplate = input<string>('{first} - {last} sur {totalRecords}');
+
+return this.currentPageReportTemplate()
+  .replace('{first}', String(state.first))
+  .replace('{totalRecords}', String(state.totalRecords));
+```
+
+That produced **6 broken references that weren't** — plus 6 phantom tokenised refs quietly inflating your coverage ratio. Same story with i18n (`translate.instant('{count}')`) and regex helpers (`raw.split('{sep}')`).
+
+Two independent filters now catch these:
+
+- **Where is the string?** A `'{…}'` handed to `replace` / `split` / `test` / `t` / `instant` / `format` / … is a runtime placeholder. An alias sitting in an object literal (`primary: '{color.primary}'`) is untouched.
+- **Is the name part of your vocabulary?** If your project declares no token the path could belong to, it isn't a reference. A typo *inside* a namespace you do own (`'{color.primry}'`, `'{colr.primary}'`) is still reported as broken — that's exactly what you want to see.
+
+Both run before the coverage counter, so the ratio is honest again. `var(--x)`, `$x` and `dt('a.b')` are unambiguous and untouched.
+
+### Tell Token Flow which variables aren't yours
+
+New setting **`tokenFlow.externalPrefixes`** (and a per-scope list, matching the IntelliJ edition). Declare the prefixes your project receives from a framework — `--p-` PrimeNG, `--ion-` Ionic, `--mat-` / `--mdc-` Material, `--bs-` Bootstrap — or exposes on purpose as a component's customisation API:
+
+```scss
+// ui-slider.scss — consumers override these via ::ng-deep
+height: var(--ui-slider-handle-size, #{$handle-size});
+```
+
+Nothing declares `--ui-slider-handle-size`, and nothing should. Adding `--ui-slider-` to the scope's external prefixes makes that reference **neutral**: it counts as tokenised, it's never flagged broken, and it never marks one of your tokens as used.
+
+Both tiers are editable in the **Settings** panel — a project-wide list under *Preferences* (one-click chips for the common frameworks) and a per-scope list in the scope detail.
+
+One trade-off worth knowing: prefer the narrowest prefix. `--ui-` silences every `--ui-*` reference, including a real typo on an existing `--ui-…` token; `--ui-slider-` only covers that component.
+
+### Install
+
+```
+code --install-extension token-flow-vscode-0.1.6.vsix
+```
+
+---
+
 ## v0.1.5 — 2026-06-29 · Analyse reliability & IntelliJ parity
 
 A focused reliability pass on the **Analyse** dashboard so it detects what the IntelliJ edition detects on the same scope, plus scope-config interop and a Library polish fix.

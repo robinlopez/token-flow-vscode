@@ -105,6 +105,13 @@ export function injectModeSegment(
 export interface ResolvedReference {
   readonly tokenName: string;
   readonly bindingPrefix: string;
+  /**
+   * True when the name was accepted purely because it matched an
+   * `externalPrefixes` entry — it names a valid variable declared
+   * outside the design system, so there is no canonical token behind
+   * it. Callers must NOT record it as "this token is used".
+   */
+  readonly external?: boolean;
 }
 
 /**
@@ -123,11 +130,23 @@ export interface ResolvedReference {
  * Returns the matched token name plus the binding prefix that had to
  * be stripped (`"token."` or `""`), so the caller can re-inject it
  * when rebuilding a replacement string.
+ *
+ * [externalPrefixes] is the §3 escape hatch: a name matching one of
+ * those prefixes is a legitimate variable owned by a framework or by a
+ * component's own customisation API. It resolves to itself, flagged
+ * `external`, so callers that bypass the analyser's main loop still
+ * never report it as broken.
  */
 export function resolveReference(
   name: string,
   tokenNames: ReadonlySet<string>,
+  externalPrefixes: readonly string[] = [],
 ): ResolvedReference | null {
+  for (const p of externalPrefixes) {
+    if (p && name.startsWith(p)) {
+      return { tokenName: name, bindingPrefix: "", external: true };
+    }
+  }
   const direct = resolveDotted(name, tokenNames);
   if (direct) return direct;
   // Dash-form fallback: `{token-modeLight-form-…}` is observed in the

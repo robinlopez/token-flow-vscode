@@ -5,9 +5,11 @@
 .vscode-test/**
 src/**
 node_modules/**
+out-test/**
 .gitignore
 .eslintrc.json
 esbuild.js
+esbuild.test.js
 tsconfig.json
 **/*.map
 **/*.ts

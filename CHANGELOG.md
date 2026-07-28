@@ -2,6 +2,24 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) — versioning [SemVer](https://semver.org/).
 
+## [0.1.6] — 2026-07-28
+
+### Added
+- **`tokenFlow.externalPrefixes`** — project-wide list of variable-name prefixes that are **valid but declared outside the design system**: framework-injected variables (`--p-` PrimeNG/PrimeVue, `--ion-` Ionic, `--mat-` / `--mdc-` Material, `--bs-` Bootstrap, `--vscode-`) or a component's own customisation API (`--ui-slider-`). Ports the IntelliJ `Scope.externalPrefixes` option, which had no VS Code equivalent, and adds a global tier on top of it. A matching reference is **neutral**: counted as tokenised (it is a variable, not a hardcoded value), never reported as broken, never added to `referenced` (so it can't mask an unused token), and no penalty on the reference-integrity axis. The effective set for a run is the global setting ∪ every active scope's own `externalPrefixes`, deduplicated. Comparison is `startsWith` on the **extracted** name, so a CSS prefix must be written with its leading dashes (`--ui-`, not `ui-`).
+  - Editable from the **Settings** panel: a project-wide list under *Preferences* (with one-click chips for the common frameworks) and a per-scope list in the scope detail. `tokenFlow.scopes[].externalPrefixes` also gained its missing `package.json` schema entry, so hand-edited `settings.json` now gets completion and validation.
+  - The main use case: a component that deliberately exposes an undeclared variable as its extension point — `height: var(--ui-slider-handle-size, #{$handle-size})` is an API, not a broken reference. Documented trade-off: prefer the narrowest prefix (`--ui-slider-` over `--ui-`), since a broad prefix also silences a genuine typo on an existing `--ui-…` token.
+
+### Fixed
+- **Message placeholders reported as broken references.** The Style-Dictionary alias syntax `'{color.primary}'` collides head-on with the most common placeholder convention in application code, so an Angular paginator like `template.replace('{first}', …).replace('{totalRecords}', …)` produced **6 phantom broken references** plus 6 phantom tokenised refs that inflated the coverage ratio. Same symptom with i18n (`translate.instant('{count}')`) and regex helpers (`raw.split('{sep}')`). Two independent layers now filter these out — each one alone neutralises the paginator, together they cover the variants:
+  - **Syntactic guard** (`scanner/placeholderGuard.ts`, port of `LiteralFinder.kt`) — a `'{…}'` string that is an argument of `replace` / `replaceAll` / `split` / `test` / `t` / `instant` / `transform` / `format` / `sprintf` / … is a runtime placeholder. The enclosing callee is found by a bounded (400-char) backward walk to the nearest unmatched `(`, skipping nested calls and quoted arguments so `.replace('(', '')` doesn't unbalance it, and stopping at a statement or block boundary — which is what keeps `primary: '{color.primary}'` in an object literal safe.
+  - **Vocabulary filter** (`scanner/tokenPathShape.ts`, port of `TokenPathShape.kt`) — asks whether the project declares any token the path could belong to. A CSS-only catalogue rejects every `'{…}'`; a dotted-path catalogue accepts a known namespace root and roots within one edit of one (so `'{color.primry}'` and `'{colr.primary}'` are still reported as *broken*, which is the point), and rejects `'{user.name}'` / `'{route.params.id}'` / `'{first}'`. The historic single-segment behaviour is preserved for catalogues with flat JS names.
+  - Both filters run **before** the coverage counter, so the ratio no longer counts placeholders as tokenised assignments. `var(--x)`, `$x` and `dt('a.b')` are unambiguous and are not routed through either filter.
+
+### Changed (internal)
+- **`scanner/referenceScan.ts`** — the reference-collection loop moved out of `designSystemAnalyzer.ts` into a `vscode`-free module that is now the single normative implementation of the tokenised / external / dynamic / broken decision order (see `SHARED_LOGIC.md`). Made the rules unit-testable; the analyser is a thin caller.
+- **`resolveReference`** accepts an optional `externalPrefixes` argument and returns the name flagged `external` when one matches — a safety net for call paths that bypass the analyser's main loop.
+- **`npm test`** — the project gained a test suite. `esbuild.test.js` transpiles `src/test/*.test.ts` into `out-test/` and Node's built-in runner executes them; no new dependency. 57 cases cover the placeholder guard, the vocabulary verdicts and the end-to-end reference scan (including the `externalPrefixes` neutrality contract).
+
 ## [0.1.5] — 2026-06-29
 
 ### Fixed

@@ -84,6 +84,37 @@ export function readScopes(): readonly ConfiguredScope[] {
 }
 
 /**
+ * Reads the project-wide `tokenFlow.externalPrefixes` setting — the
+ * global tier of the option. Covers the common case (a framework
+ * injecting `--p-` / `--ion-` / `--mat-` variables everywhere) without
+ * forcing the user to repeat itself in every scope.
+ */
+export function readGlobalExternalPrefixes(): readonly string[] {
+  return vscode.workspace
+    .getConfiguration("tokenFlow")
+    .get<readonly string[]>("externalPrefixes", []);
+}
+
+/**
+ * Effective prefix set for an analysis run: the global setting unioned
+ * with every active scope's own `externalPrefixes`, trimmed and
+ * deduplicated. Same union rule as the IntelliJ side, which only has
+ * the per-scope tier.
+ */
+export function effectiveExternalPrefixes(
+  activeScopes: readonly ConfiguredScope[],
+): readonly string[] {
+  const set = new Set<string>();
+  const add = (raw: string): void => {
+    const p = raw.trim();
+    if (p) set.add(p);
+  };
+  for (const p of readGlobalExternalPrefixes()) add(p);
+  for (const s of activeScopes) for (const p of s.externalPrefixes) add(p);
+  return [...set];
+}
+
+/**
  * Mirror of `ScopeResolver.activeScopesFor` (IntelliJ). Returns scopes
  * applicable when editing [filePath]:
  *   • every common scope (empty rootPath),

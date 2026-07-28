@@ -353,6 +353,12 @@ export type SettingsHostMessage =
       type: "config";
       scopes: readonly WireScope[];
       preferences: WirePreferences;
+      /**
+       * Project-wide `tokenFlow.externalPrefixes`. Kept out of
+       * `WirePreferences` because it's a list, not a scalar the host can
+       * narrow in one `typeof` check.
+       */
+      globalExternalPrefixes: readonly string[];
       /** Human-readable workspace name, surfaced in the panel header. */
       workspaceName: string | null;
       /** True when no workspace folder is open — disables the UI with a hint. */
@@ -394,6 +400,22 @@ export type SettingsClientMessage =
       index: number;
       field: ScopePathField;
       pathIndex: number;
+    }
+  | {
+      /**
+       * Appends an `externalPrefixes` entry. `scopeIndex: null` targets
+       * the project-wide `tokenFlow.externalPrefixes`; a number targets
+       * that scope's own list. The host validates the shape and
+       * de-duplicates.
+       */
+      type: "addExternalPrefix";
+      scopeIndex: number | null;
+      value: string;
+    }
+  | {
+      type: "removeExternalPrefix";
+      scopeIndex: number | null;
+      prefixIndex: number;
     }
   | {
       /**

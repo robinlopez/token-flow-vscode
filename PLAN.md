@@ -168,6 +168,18 @@ matters for the "wow factor" once everything else is solid.
     coverage. Target button per row jumps to the source location.
 - ✅ Cache the analysis — relies on `TokenScanner` cache;
   auto-refreshes on `scanner.onDidChange`.
+- ✅ Broken-reference parity with IntelliJ v0.2.4 (0.1.6) —
+  `SHARED_LOGIC.md` §16:
+  - Placeholder guard (`scanner/placeholderGuard.ts`) — a `'{…}'`
+    argument of `replace` / `split` / `instant` / … is a runtime
+    placeholder, dropped before the coverage counter.
+  - Vocabulary filter (`scanner/tokenPathShape.ts`) — a `'{…}'` name
+    outside the project's token vocabulary isn't a reference.
+  - `tokenFlow.externalPrefixes` (global) ∪ per-scope
+    `externalPrefixes` — framework-injected variables and component
+    customisation APIs are neutral, never broken.
+  - Reference collection extracted to `scanner/referenceScan.ts`
+    (`vscode`-free, unit-tested via `npm test`).
 
 ---
 
