@@ -434,6 +434,50 @@ body {
   align-self: flex-start;
 }
 
+/* ─── External-prefix lists ──────────────────────────────────────── */
+
+/* Prefixes are typed rather than picked from a dialog, so the "add"
+   affordance is an input + button pair instead of a lone button. */
+.prefix-add {
+  display: flex;
+  gap: 6px;
+}
+
+.prefix-add .scope-form__input {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+}
+
+.prefix-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.prefix-suggestions__label {
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.prefix-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.85em;
+  color: var(--vscode-foreground);
+  background: var(--vscode-badge-background, transparent);
+  border: 1px solid var(--vscode-contrastBorder, transparent);
+  border-radius: 10px;
+}
+
+.prefix-chip:hover {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+}
+
 /* ─── Buttons ────────────────────────────────────────────────────── */
 
 .btn {

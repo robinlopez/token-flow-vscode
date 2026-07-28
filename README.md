@@ -104,6 +104,78 @@ source.
   paths, whitelists and excludes. A master-detail **Settings webview**
   ships with native folder/file pickers and saves directly to workspace
   settings — no JSON hand-editing needed.
+- **External variable prefixes** — declare the prefixes your project
+  gets from elsewhere (`--p-` PrimeNG, `--ion-` Ionic, `--mat-` /
+  `--mdc-` Material, `--bs-` Bootstrap) or exposes on purpose as a
+  component customisation API (`--ui-slider-`). References matching a
+  prefix stay out of the broken-reference list without being mistaken
+  for design tokens. Set project-wide via `tokenFlow.externalPrefixes`,
+  or per scope for a component's own API — see
+  [Configuration](#configuration).
+
+---
+
+## Configuration
+
+Everything is editable from the **Settings** webview
+(*Token Flow: Configure Scopes*). The underlying settings, for reference:
+
+| Setting | What it does |
+| --- | --- |
+| `tokenFlow.scopes` | Named scopes — `rootPath`, `sourcePaths`, `whitelistPaths`, `excludedPaths`, `externalPrefixes`. |
+| `tokenFlow.sourcePaths` | Back-compat fallback used when `scopes` is empty. |
+| `tokenFlow.externalPrefixes` | Project-wide external variable prefixes (see below). |
+| `tokenFlow.hover.enabled` | Hover popup on token references. |
+| `tokenFlow.copyValue.enabled` | `Alt+V` Copy Token Value and its surfaces. |
+| `tokenFlow.alternatives.pickerStyle` | `Alt+T` picker — side panel or native popup. |
+
+### External variable prefixes
+
+A reference whose name starts with one of these prefixes is treated as
+**valid but external**: it counts as tokenised (it *is* a variable, not a
+hardcoded value), it is never reported as a broken reference, and it
+never marks one of your tokens as used. Write the prefix with its
+leading dashes — the comparison runs on the extracted name, so `--ui-`,
+not `ui-`.
+
+```jsonc
+{
+  // Project-wide — framework-injected variables.
+  "tokenFlow.externalPrefixes": ["--p-", "--mat-"],
+
+  "tokenFlow.scopes": [
+    {
+      "name": "ui",
+      "rootPath": "libs/ui",
+      "sourcePaths": ["libs/ui/src/styles/tokens"],
+      // Scope-local — this library's own customisation API.
+      "externalPrefixes": ["--ui-slider-", "--ui-toggle-"]
+    }
+  ]
+}
+```
+
+The effective set for an analysis run is the project-wide list unioned
+with every active scope's own list.
+
+**Prefer the narrowest prefix you can.** `--ui-` silences *every*
+`--ui-*` reference, including a genuine typo on an existing `--ui-…`
+token; `--ui-slider-` only covers that one component's API. Go
+component-by-component while the count stays reasonable, and fall back to
+the broad prefix knowingly.
+
+The typical case: a component that deliberately exposes an undeclared
+variable as its extension point.
+
+```scss
+// ui-slider.scss — consumers override these via ::ng-deep
+height: var(--ui-slider-handle-size, #{$handle-size});
+width:  var(--ui-slider-thickness, #{$track-thickness});
+```
+
+Nothing declares `--ui-slider-handle-size`, and nothing should — it's an
+API, not a bug. Adding `--ui-slider-` to the scope's `externalPrefixes`
+tells Analyse exactly that.
 
 ---
 

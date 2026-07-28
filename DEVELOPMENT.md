@@ -26,6 +26,23 @@ The watcher rebuilds the host (`out/extension.js`) and every webview
 bundle (`out/webview/*.js`) on every change. Reload the Extension
 Host window (`Cmd/Ctrl+R`) to pick up the rebuild.
 
+## Tests
+
+```bash
+npm test
+```
+
+`esbuild.test.js` transpiles every `src/test/*.test.ts` into `out-test/`
+and Node's built-in runner executes them — no extra dependency, no
+Extension Host round-trip.
+
+Only `vscode`-free modules can be covered this way. The reference
+resolution rules (`scanner/referenceScan.ts`,
+`scanner/placeholderGuard.ts`, `scanner/tokenPathShape.ts`,
+`scanner/tokenNameParser.ts`) are kept free of the host API precisely so
+the invariants in [`SHARED_LOGIC.md`](SHARED_LOGIC.md) §16 stay testable.
+Anything touching those rules should ship with a case.
+
 ## Package a `.vsix`
 
 ```bash

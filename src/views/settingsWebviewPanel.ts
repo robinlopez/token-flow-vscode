@@ -24,7 +24,10 @@ import {
   WirePreferences,
   WireScope,
 } from "../webview/shared/protocol";
-import { ConfiguredScope } from "../settings/scopes";
+import {
+  ConfiguredScope,
+  readGlobalExternalPrefixes,
+} from "../settings/scopes";
 import {
   exportScopes as serialiseScopes,
   importScopes as parseScopes,
@@ -33,6 +36,21 @@ import {
 } from "../settings/scopeConfigIO";
 import { buildWebviewHtml } from "./webviewHtml";
 import { detectScopes } from "../settings/autoScopeDetector";
+
+/**
+ * A prefix is a variable-name *stem*, so it accepts everything a name
+ * accepts minus the requirement to be complete: an optional `--` / `$`
+ * sigil, then an identifier that may end on a dash (`--ui-slider-`).
+ * Same pattern as `package.json`'s `tokenFlow.externalPrefixes` schema —
+ * keep the two in sync.
+ */
+const PREFIX_RE = /^(--|\$)?[A-Za-z_][A-Za-z0-9_-]*$/;
+
+/** Trims and validates a user-typed prefix; returns null when unusable. */
+function normalisePrefix(raw: string): string | null {
+  const value = raw.trim();
+  return PREFIX_RE.test(value) ? value : null;
+}
 
 interface MutableScope {
   name: string;
@@ -93,6 +111,7 @@ class SettingsPanel {
         if (
           e.affectsConfiguration("tokenFlow.scopes") ||
           e.affectsConfiguration("tokenFlow.sourcePaths") ||
+          e.affectsConfiguration("tokenFlow.externalPrefixes") ||
           e.affectsConfiguration("tokenFlow.alternatives.pickerStyle") ||
           e.affectsConfiguration("tokenFlow.hover.enabled")
         ) {
@@ -111,6 +130,7 @@ class SettingsPanel {
       type: "config",
       scopes: this.readScopesRaw(),
       preferences: this.readPreferences(),
+      globalExternalPrefixes: [...readGlobalExternalPrefixes()],
       workspaceName: vscode.workspace.workspaceFolders?.[0]?.name ?? null,
       noWorkspace: !vscode.workspace.workspaceFolders?.length,
     });
@@ -186,6 +206,45 @@ class SettingsPanel {
           s[msg.field].splice(msg.pathIndex, 1);
         });
         return;
+      case "addExternalPrefix": {
+        const prefix = normalisePrefix(msg.value);
+        if (!prefix) {
+          vscode.window.showWarningMessage(
+            "Token Flow: a prefix must look like a variable name — `--p-`, `--ui-slider-`, `$legacy-`.",
+          );
+          return;
+        }
+        if (msg.scopeIndex === null) {
+          await this.writeGlobalPrefixes((list) => {
+            if (!list.includes(prefix)) list.push(prefix);
+          });
+          return;
+        }
+        const scopeIndex = msg.scopeIndex;
+        await this.mutate((scopes) => {
+          const s = scopes[scopeIndex];
+          if (!s) return;
+          if (!s.externalPrefixes.includes(prefix)) {
+            s.externalPrefixes.push(prefix);
+          }
+        });
+        return;
+      }
+      case "removeExternalPrefix": {
+        if (msg.scopeIndex === null) {
+          await this.writeGlobalPrefixes((list) => {
+            list.splice(msg.prefixIndex, 1);
+          });
+          return;
+        }
+        const scopeIndex = msg.scopeIndex;
+        await this.mutate((scopes) => {
+          const s = scopes[scopeIndex];
+          if (!s) return;
+          s.externalPrefixes.splice(msg.prefixIndex, 1);
+        });
+        return;
+      }
       case "updatePreference":
         await this.writePreference(msg.key, msg.value);
         return;
@@ -554,6 +613,28 @@ class SettingsPanel {
       );
       return;
     }
+  }
+
+  /**
+   * Read-modify-write of the project-wide prefix list, serialised on the
+   * same chain as the scope writes so a burst of UI clicks can't race.
+   */
+  private async writeGlobalPrefixes(
+    mutator: (list: string[]) => void,
+  ): Promise<void> {
+    this.writeChain = this.writeChain.then(async () => {
+      const current = [...readGlobalExternalPrefixes()];
+      mutator(current);
+      await vscode.workspace
+        .getConfiguration("tokenFlow")
+        .update(
+          "externalPrefixes",
+          current,
+          vscode.ConfigurationTarget.Workspace,
+        );
+      await this.refresh();
+    });
+    return this.writeChain;
   }
 
   private readScopesRaw(): WireScope[] {

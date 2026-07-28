@@ -14,7 +14,25 @@
       "Bash(rtk read *)",
       "Bash(rtk git *)",
       "Bash(git checkout *)",
-      "Bash(rtk gh *)"
+      "Bash(rtk gh *)",
+      "Bash(node -e \"const s=require\\('./package.json'\\).scripts; console.log\\(JSON.stringify\\(s,null,2\\)\\)\")",
+      "Bash(git restore *)",
+      "Bash(rtk npx *)",
+      "Bash(node_modules/.bin/vsce ls *)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(npm version *)",
+      "Bash(node_modules/.bin/vsce package *)",
+      "Bash(git cherry-pick *)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git tag *)",
+      "Bash(npm run *)",
+      "Bash(git commit *)",
+      "Bash(cd /Users/robinlopez && rtk grep -r \"enum class TokenKind\" \"Perso/Projet Perso/06_Plugin/token-flow/src\" --include=\"*.kt\")",
+      "Bash(git reset *)",
+      "Bash(git branch *)",
+      "Bash(rm -f token-flow-vscode-0.1.4.vsix)"
     ]
   }
 }

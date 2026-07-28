@@ -30,6 +30,8 @@ const vscode = acquireVsCodeApi();
 interface State {
   scopes: readonly WireScope[];
   preferences: WirePreferences | null;
+  /** Project-wide `tokenFlow.externalPrefixes`. */
+  globalExternalPrefixes: readonly string[];
   workspaceName: string | null;
   noWorkspace: boolean;
   /** Index of the currently-selected scope (sticky across re-renders). */
@@ -41,6 +43,7 @@ interface State {
 const state: State = {
   scopes: [],
   preferences: null,
+  globalExternalPrefixes: [],
   workspaceName: null,
   noWorkspace: false,
   selected: 0,
@@ -55,6 +58,7 @@ window.addEventListener(
       case "config":
         state.scopes = msg.scopes;
         state.preferences = msg.preferences;
+        state.globalExternalPrefixes = msg.globalExternalPrefixes;
         state.workspaceName = msg.workspaceName;
         state.noWorkspace = msg.noWorkspace;
         // Clamp selection — list might have shrunk between snapshots.
@@ -216,6 +220,18 @@ function buildPreferencesSection(prefs: WirePreferences): HTMLElement {
     }),
   );
 
+  // External prefixes — project-wide tier. Sits with the preferences
+  // because the framework-injected case (`--p-`, `--ion-`) is global by
+  // nature; the per-scope tier lives in the scope detail below.
+  section.appendChild(
+    buildPrefixSection(
+      null,
+      state.globalExternalPrefixes,
+      "External variable prefixes",
+      "Prefixes that are valid but declared outside the design system — a framework's variables (--p-, --ion-, --mat-, --bs-, --vscode-) or a component's own customisation API (--ui-slider-). Matching references are never reported as broken. Include the leading dashes.",
+    ),
+  );
+
   // Keybindings — redirect to VS Code's native editor instead of
   // mirroring it. We list the defaults inline so the user knows what
   // to look for, then offer the button. Single source of truth lives
@@ -225,6 +241,143 @@ function buildPreferencesSection(prefs: WirePreferences): HTMLElement {
 
   return section;
 }
+
+// ─── External-prefix lists ──────────────────────────────────────────────
+
+/**
+ * Editable list of `externalPrefixes` entries. One builder serves both
+ * tiers: [scopeIndex] `null` targets the project-wide setting, a number
+ * targets that scope's own list.
+ *
+ * Unlike the path sections there's no file picker to lean on — a prefix
+ * is typed, so the "add" affordance is an input + button pair. Enter
+ * submits, matching the muscle memory of a tag input.
+ */
+function buildPrefixSection(
+  scopeIndex: number | null,
+  prefixes: readonly string[],
+  title: string,
+  hint: string,
+  /**
+   * Prefixes already in effect from the other tier. Not listed as rows
+   * (they aren't this list's to remove) but excluded from the
+   * suggestions, since adding a duplicate would change nothing.
+   */
+  alreadyCovered: readonly string[] = [],
+): HTMLElement {
+  const section = document.createElement("div");
+  section.className = "path-section";
+
+  const header = document.createElement("header");
+  header.className = "path-section__header";
+  const titleEl = document.createElement("h3");
+  titleEl.className = "path-section__title";
+  titleEl.textContent = title;
+  const count = document.createElement("span");
+  count.className = "path-section__count";
+  count.textContent = String(prefixes.length);
+  header.append(titleEl, count);
+
+  const hintEl = document.createElement("p");
+  hintEl.className = "path-section__hint";
+  hintEl.textContent = hint;
+
+  section.append(header, hintEl);
+
+  const list = document.createElement("ul");
+  list.className = "path-list";
+  if (prefixes.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "path-list__empty";
+    empty.textContent = "(none)";
+    list.appendChild(empty);
+  } else {
+    for (let i = 0; i < prefixes.length; i++) {
+      const li = document.createElement("li");
+      li.className = "path-row";
+      const text = document.createElement("span");
+      text.className = "path-row__text";
+      text.textContent = prefixes[i];
+      li.appendChild(text);
+      li.appendChild(
+        iconButton("✕", "Remove this prefix", () =>
+          vscode.postMessage({
+            type: "removeExternalPrefix",
+            scopeIndex,
+            prefixIndex: i,
+          }),
+        ),
+      );
+      list.appendChild(li);
+    }
+  }
+  section.appendChild(list);
+
+  const addRow = document.createElement("div");
+  addRow.className = "prefix-add";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "scope-form__input";
+  input.placeholder = "e.g. --p-, --ui-slider-";
+  input.setAttribute("aria-label", `Add a prefix to ${title}`);
+
+  const submit = (): void => {
+    const value = input.value.trim();
+    if (!value) return;
+    input.value = "";
+    vscode.postMessage({ type: "addExternalPrefix", scopeIndex, value });
+  };
+
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    submit();
+  });
+
+  addRow.append(input, secondaryButton("Add", submit));
+  section.appendChild(addRow);
+
+  // Ready-made suggestions for the frameworks that ship their own
+  // variables — one click beats remembering the exact spelling.
+  const inEffect = new Set([...prefixes, ...alreadyCovered]);
+  const missing = PREFIX_SUGGESTIONS.filter((s) => !inEffect.has(s.prefix));
+  if (missing.length > 0) {
+    const chips = document.createElement("div");
+    chips.className = "prefix-suggestions";
+    const label = document.createElement("span");
+    label.className = "prefix-suggestions__label";
+    label.textContent = "Common:";
+    chips.appendChild(label);
+    for (const s of missing) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "prefix-chip";
+      chip.textContent = s.prefix;
+      chip.title = `Add ${s.prefix} (${s.label})`;
+      chip.addEventListener("click", () =>
+        vscode.postMessage({
+          type: "addExternalPrefix",
+          scopeIndex,
+          value: s.prefix,
+        }),
+      );
+      chips.appendChild(chip);
+    }
+    section.appendChild(chips);
+  }
+
+  return section;
+}
+
+const PREFIX_SUGGESTIONS: readonly { prefix: string; label: string }[] = [
+  { prefix: "--p-", label: "PrimeNG / PrimeVue" },
+  { prefix: "--ion-", label: "Ionic" },
+  { prefix: "--mat-", label: "Angular Material" },
+  { prefix: "--mdc-", label: "Material Components" },
+  { prefix: "--bs-", label: "Bootstrap" },
+  { prefix: "--vscode-", label: "VS Code webviews" },
+];
 
 function buildKeybindingsField(): HTMLElement {
   const row = document.createElement("div");
@@ -565,6 +718,13 @@ function buildDetail(): HTMLElement {
       "excludedPaths",
       "Excludes",
       "Folders/files inside the root to skip during analysis (e.g. unrelated sub-modules).",
+    ),
+    buildPrefixSection(
+      state.selected,
+      scope.externalPrefixes,
+      "External prefixes",
+      "Prefixes owned by this scope alone — typically a component's customisation API (--ui-slider-). Unioned with the project-wide list above. Prefer the narrowest prefix: --ui- would also silence a real typo on a --ui-… token.",
+      state.globalExternalPrefixes,
     ),
   );
   return section;

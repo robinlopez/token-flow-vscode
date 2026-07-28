@@ -2,7 +2,7 @@
   "name": "token-flow-vscode",
   "displayName": "Token Flow - Design System",
   "description": "Bridging the gap between Design and Code. Find, insert, swap and audit design tokens (SCSS · CSS · TS/JS) without leaving your editor.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "robin-lopez",
   "license": "MIT",
   "icon": "media/pluginIcon.png",
@@ -82,9 +82,28 @@
                 },
                 "default": [],
                 "description": "Folders/files inside the root to skip during analysis (e.g. unrelated sub-modules)."
+              },
+              "externalPrefixes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^(--|\\$)?[A-Za-z_][A-Za-z0-9_-]*$"
+                },
+                "default": [],
+                "description": "Variable-name prefixes valid but declared outside this scope's design system. Unioned with the project-wide tokenFlow.externalPrefixes. Include the leading dashes (e.g. --ui-slider-)."
               }
             }
           }
+        },
+        "tokenFlow.externalPrefixes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(--|\\$)?[A-Za-z_][A-Za-z0-9_-]*$"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Variable-name prefixes that are valid but declared outside the design system — framework-injected variables (`--p-`, `--ion-`, `--mat-`, `--bs-`, `--vscode-`) or a component's own customisation API (`--ui-slider-`). References matching a prefix are never reported as broken and never mark a token as used, but still count as tokenised. Include the leading dashes. Unioned with each active scope's own `externalPrefixes`."
         },
         "tokenFlow.sourcePaths": {
           "type": "array",
@@ -272,6 +291,7 @@
     "build": "node esbuild.js --production",
     "watch": "node esbuild.js --watch",
     "compile": "tsc -p . --noEmit && tsc -p tsconfig.webview.json --noEmit",
+    "test": "node esbuild.test.js && node --test out-test/",
     "package": "vsce package"
   },
   "devDependencies": {
